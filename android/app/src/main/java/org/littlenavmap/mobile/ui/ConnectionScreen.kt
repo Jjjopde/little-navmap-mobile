@@ -40,6 +40,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -71,6 +72,15 @@ internal fun ConnectionScreen(
     onPortChanged: (String) -> Unit,
     onConnect: () -> Unit,
     onBack: () -> Unit,
+    appLanguage: AppLanguage,
+    onLanguageChange: (AppLanguage) -> Unit,
+    simBriefState: SimBriefUiState,
+    onSimBriefUsernameChange: (String) -> Unit,
+    onSimBriefImport: () -> Unit,
+    navigraphState: NavigraphUiState,
+    onNavigraphExportUrlChange: (String) -> Unit,
+    onNavigraphTokenChange: (String) -> Unit,
+    onNavigraphImport: () -> Unit,
 ) {
     val isConnecting = state.phase == ConnectionPhase.Connecting
     val focusManager = LocalFocusManager.current
@@ -101,13 +111,16 @@ internal fun ConnectionScreen(
             )
             Spacer(Modifier.height(20.dp))
             Text(
-                text = stringResource(R.string.connect_title),
+                text = localized("Connect to Little Navmap", "连接 Little Navmap"),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Use a Little Navmap desktop server connected to X-Plane 12, MSFS, or Prepar3D.",
+                text = localized(
+                    "Little Navmap desktop server for X-Plane 12, MSFS, or Prepar3D.",
+                    "连接 X-Plane 12、MSFS 或 Prepar3D 的 Little Navmap 桌面服务器。",
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -118,7 +131,7 @@ internal fun ConnectionScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.protocol),
+                    text = localized("Protocol", "协议"),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -144,7 +157,7 @@ internal fun ConnectionScreen(
                     value = state.address,
                     onValueChange = onAddressChanged,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.server_address)) },
+                    label = { Text(localized("Server address", "服务器地址")) },
                     enabled = !isConnecting,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
@@ -161,7 +174,7 @@ internal fun ConnectionScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(portFocusRequester),
-                    label = { Text(stringResource(R.string.port)) },
+                    label = { Text(localized("Port", "端口")) },
                     enabled = !isConnecting,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
@@ -185,7 +198,7 @@ internal fun ConnectionScreen(
                     ) {
                         Column(Modifier.padding(16.dp)) {
                             Text(
-                                text = stringResource(R.string.connection_failed),
+                                text = localized("Connection failed", "连接失败"),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                             )
@@ -218,16 +231,42 @@ internal fun ConnectionScreen(
                         Spacer(Modifier.size(12.dp))
                     }
                     Text(
-                        text = stringResource(
-                            when {
-                                isConnecting -> R.string.connecting
-                                state.phase == ConnectionPhase.Error -> R.string.retry
-                                else -> R.string.connect
-                            },
-                        ),
+                        text = when {
+                            isConnecting -> localized("Connecting", "正在连接")
+                            state.phase == ConnectionPhase.Error -> localized("Retry", "重试")
+                            else -> localized("Connect", "连接")
+                        },
                     )
                 }
             }
+            Spacer(Modifier.height(28.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("LITTLE NAVMAP", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        localized("Local network connection", "局域网连接"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            CloudImportPanel(
+                simBriefState = simBriefState,
+                onSimBriefUsernameChange = onSimBriefUsernameChange,
+                onSimBriefImport = onSimBriefImport,
+                navigraphState = navigraphState,
+                onNavigraphExportUrlChange = onNavigraphExportUrlChange,
+                onNavigraphTokenChange = onNavigraphTokenChange,
+                onNavigraphImport = onNavigraphImport,
+            )
             Spacer(Modifier.height(28.dp))
         }
         IconButton(
@@ -240,6 +279,12 @@ internal fun ConnectionScreen(
                 painter = painterResource(R.drawable.ic_arrow_back),
                 contentDescription = stringResource(R.string.back),
             )
+        }
+        TextButton(
+            onClick = { onLanguageChange(appLanguage.next()) },
+            modifier = Modifier.align(Alignment.TopEnd).padding(end = 48.dp),
+        ) {
+            Text(if (appLanguage == AppLanguage.English) "中" else "EN")
         }
         IconButton(
             onClick = { showLegalNotices = true },

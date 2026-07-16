@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Little Navmap 移动版</string>
-    <string name="connect_title">连接 Little Navmap</string>
-    <string name="server_address">服务器地址</string>
-    <string name="port">端口</string>
-    <string name="protocol">协议</string>
-    <string name="connect">连接</string>
-    <string name="connecting">正在连接…</string>
     <string name="connection_failed">连接失败</string>
     <string name="retry">重试</string>
     <string name="disconnect">断开连接</string>

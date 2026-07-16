@@ -63,15 +63,16 @@ import org.littlenavmap.mobile.network.AviationWeatherClient
 
 private enum class PlannerDestination(val title: String, val icon: Int) {
     Plan("Plan", R.drawable.ic_route),
+    Map("Map", R.drawable.ic_map),
     Weather("Weather", R.drawable.ic_progress),
     Simulator("Simulator", R.drawable.ic_plane),
     Data("Data", R.drawable.ic_airport),
 }
 
-private enum class ProcedureField(val title: String) {
-    Sid("Departure procedure"),
-    Star("Arrival procedure"),
-    Approach("Approach"),
+private enum class ProcedureField {
+    Sid,
+    Star,
+    Approach,
 }
 
 private enum class ExportFormat(val fileName: String) {
@@ -92,9 +93,17 @@ internal fun FlightPlanningScreen(
     onXPlanePortChange: (String) -> Unit,
     onXPlaneConnect: () -> Unit,
     onXPlaneRefresh: () -> Unit,
+    appLanguage: AppLanguage,
+    onLanguageChange: (AppLanguage) -> Unit,
+    simBriefState: SimBriefUiState,
+    onSimBriefUsernameChange: (String) -> Unit,
+    onSimBriefImport: () -> Unit,
+    navigraphState: NavigraphUiState,
+    onNavigraphExportUrlChange: (String) -> Unit,
+    onNavigraphTokenChange: (String) -> Unit,
+    onNavigraphImport: () -> Unit,
     isConnected: Boolean,
     onConnect: () -> Unit,
-    onOpenLiveMap: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -163,23 +172,29 @@ internal fun FlightPlanningScreen(
                     Column {
                         Text("NAVMAP", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (isConnected) "Live link active" else "Local flight planning",
+                            if (isConnected) localized("Live link active", "实时连接已启用") else localized("Local flight planning", "本地飞行计划"),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 },
                 actions = {
+                    androidx.compose.material3.TextButton(onClick = { onLanguageChange(appLanguage.next()) }) {
+                        Text(if (appLanguage == AppLanguage.English) "中" else "EN")
+                    }
                     if (isConnected) {
-                        IconButton(onClick = onOpenLiveMap) {
-                            Icon(painterResource(R.drawable.ic_map), "Open live map")
-                        }
+                        Text(
+                            "LNM ONLINE",
+                            modifier = Modifier.padding(end = 16.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
                     } else {
                         OutlinedButton(
                             onClick = onConnect,
                             modifier = Modifier.padding(end = 12.dp).heightIn(min = 40.dp),
                             shape = RoundedCornerShape(6.dp),
-                        ) { Text("Connect") }
+                        ) { Text(localized("Connect", "连接")) }
                     }
                 },
             )
@@ -191,7 +206,7 @@ internal fun FlightPlanningScreen(
                         selected = destination == item,
                         onClick = { destination = item },
                         icon = { Icon(painterResource(item.icon), item.title) },
-                        label = { Text(item.title) },
+                        label = { Text(plannerDestinationTitle(item)) },
                         alwaysShowLabel = true,
                     )
                 }
@@ -225,6 +240,10 @@ internal fun FlightPlanningScreen(
                 },
                 canExportXPlaneFms = FlightPlanCodec.canExportXPlaneFms(plan),
                 fileMessage = fileMessage,
+                modifier = Modifier.padding(padding),
+            )
+            PlannerDestination.Map -> FlightPlanMapScreen(
+                plan = plan,
                 modifier = Modifier.padding(padding),
             )
             PlannerDestination.Weather -> WeatherPanel(
@@ -281,13 +300,16 @@ internal fun FlightPlanningScreen(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             Text(
-                text = field.title,
+                        text = procedureTitle(field),
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "Enter the published identifier. It is validated against the connected Little Navmap navigation database.",
+                text = localized(
+                    "Enter the published identifier. It is validated against the connected Little Navmap navigation database.",
+                    "输入已发布的程序标识。连接 Little Navmap 后可使用其导航数据库验证。",
+                ),
                 modifier = Modifier.padding(horizontal = 24.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
@@ -314,7 +336,7 @@ internal fun FlightPlanningScreen(
                 value = procedureDraft,
                 onValueChange = { procedureDraft = it.uppercase() },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
-                label = { Text(field.title) },
+                label = { Text(procedureTitle(field)) },
                 singleLine = true,
             )
             Row(
@@ -329,7 +351,7 @@ internal fun FlightPlanningScreen(
                         },
                         modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                         shape = RoundedCornerShape(6.dp),
-                    ) { Text("Clear") }
+                    ) { Text(localized("Clear", "清除")) }
                 }
                 Button(
                     onClick = {
@@ -338,7 +360,7 @@ internal fun FlightPlanningScreen(
                     },
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                     shape = RoundedCornerShape(6.dp),
-                ) { Text("Apply") }
+                ) { Text(localized("Apply", "应用")) }
             }
             Spacer(Modifier.height(28.dp))
         }
@@ -365,34 +387,48 @@ private fun FlightPlanEditor(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Flight plan", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("Build the route locally, then send or export it when ready.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PlanField("From", plan.origin, { onPlanChange(plan.copy(origin = it.uppercase())) }, Modifier.weight(1f))
-            PlanField("To", plan.destination, { onPlanChange(plan.copy(destination = it.uppercase())) }, Modifier.weight(1f))
+        Text(localized("Flight plan", "飞行计划"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        Text(localized("Build and edit the route on your phone, then export it when ready.", "在手机上创建和编辑航路，完成后即可导出。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PlanSummaryMetric("DEP", plan.origin.ifBlank { "----" }, Modifier.weight(1f))
+                PlanSummaryMetric("CRZ", plan.cruiseLevel, Modifier.weight(1f))
+                PlanSummaryMetric("ARR", plan.destination.ifBlank { "----" }, Modifier.weight(1f))
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PlanField("Cruise", plan.cruiseLevel, { onPlanChange(plan.copy(cruiseLevel = it.uppercase())) }, Modifier.weight(1f))
-            PlanField("Alternate", plan.alternate, { onPlanChange(plan.copy(alternate = it.uppercase())) }, Modifier.weight(1f))
+            PlanField(localized("From", "起飞"), plan.origin, { onPlanChange(plan.copy(origin = it.uppercase())) }, Modifier.weight(1f))
+            PlanField(localized("To", "目的地"), plan.destination, { onPlanChange(plan.copy(destination = it.uppercase())) }, Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PlanField(localized("Cruise", "巡航"), plan.cruiseLevel, { onPlanChange(plan.copy(cruiseLevel = it.uppercase())) }, Modifier.weight(1f))
+            PlanField(localized("Alternate", "备降"), plan.alternate, { onPlanChange(plan.copy(alternate = it.uppercase())) }, Modifier.weight(1f))
         }
         HorizontalDivider()
         ProcedureRow("SID", plan.departureProcedure, { onProcedureClick(ProcedureField.Sid) })
         ProcedureRow("STAR", plan.arrivalProcedure, { onProcedureClick(ProcedureField.Star) })
-        ProcedureRow("Approach", plan.approach, { onProcedureClick(ProcedureField.Approach) })
+        ProcedureRow(localized("Approach", "进近程序"), plan.approach, { onProcedureClick(ProcedureField.Approach) })
         HorizontalDivider()
-        Text("Route", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(localized("Route", "航路"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = waypointInput,
                 onValueChange = onWaypointInputChange,
                 modifier = Modifier.weight(1f),
-                label = { Text("Waypoint / airway") },
+                label = { Text(localized("Waypoint / airway", "航路点 / 航路")) },
                 singleLine = true,
             )
-            Button(onClick = onAddWaypoint, modifier = Modifier.heightIn(min = 52.dp), shape = RoundedCornerShape(6.dp)) { Text("Add") }
+            Button(onClick = onAddWaypoint, modifier = Modifier.heightIn(min = 52.dp), shape = RoundedCornerShape(6.dp)) { Text(localized("Add", "添加")) }
         }
         if (plan.waypoints.isEmpty()) {
-            Text("No enroute waypoints yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(localized("No enroute waypoints yet.", "暂未添加航路点。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             plan.waypoints.forEachIndexed { index, waypoint ->
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -422,23 +458,23 @@ private fun FlightPlanEditor(
             }
         }
         HorizontalDivider()
-        Text("Files", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(localized("Files", "文件"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) { Text("Import") }
+            OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) { Text(localized("Import", "导入")) }
             Button(onClick = { onExport(ExportFormat.Json) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) { Text("Export JSON") }
         }
         OutlinedButton(onClick = { onExport(ExportFormat.RouteText) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) {
-            Text("Export route text")
+            Text(localized("Export route text", "导出航路文本"))
         }
         OutlinedButton(
             onClick = { onExport(ExportFormat.XPlaneFms) },
             enabled = canExportXPlaneFms,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             shape = RoundedCornerShape(6.dp),
-        ) { Text("Export X-Plane FMS") }
+        ) { Text(localized("Export X-Plane FMS", "导出 X-Plane FMS")) }
         if (!canExportXPlaneFms) {
             Text(
-                "X-Plane export needs a route with resolved coordinates.",
+                localized("X-Plane export needs a route with resolved coordinates.", "X-Plane 导出需要已解析坐标的航路。"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -458,13 +494,21 @@ private fun PlanField(label: String, value: String, onChange: (String) -> Unit, 
 }
 
 @Composable
+private fun PlanSummaryMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
 private fun ProcedureRow(label: String, value: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value.ifBlank { "Select" }, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(value.ifBlank { localized("Select", "选择") }, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         Icon(
             painter = painterResource(R.drawable.ic_arrow_back),
             contentDescription = "Select $label",
@@ -487,15 +531,15 @@ private fun WeatherPanel(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Weather", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("Live METAR from Aviation Weather.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(localized("Weather", "气象"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        Text(localized("Live METAR from Aviation Weather.", "来自 Aviation Weather 的实时 METAR。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedTextField(value = station, onValueChange = onStationChange, modifier = Modifier.weight(1f), label = { Text("Airport ICAO") }, singleLine = true)
-            Button(onClick = onRefresh, enabled = !loading, modifier = Modifier.heightIn(min = 52.dp), shape = RoundedCornerShape(6.dp)) { Text(if (loading) "Loading" else "Refresh") }
+            OutlinedTextField(value = station, onValueChange = onStationChange, modifier = Modifier.weight(1f), label = { Text(localized("Airport ICAO", "机场 ICAO")) }, singleLine = true)
+            Button(onClick = onRefresh, enabled = !loading, modifier = Modifier.heightIn(min = 52.dp), shape = RoundedCornerShape(6.dp)) { Text(localized(if (loading) "Loading" else "Refresh", if (loading) "加载中" else "刷新")) }
         }
         Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth()) {
             Text(
-                text = error ?: weatherText ?: "Select an airport and refresh to load the latest METAR.",
+                text = error ?: weatherText ?: localized("Select an airport and refresh to load the latest METAR.", "选择机场后刷新以获取最新 METAR。"),
                 modifier = Modifier.padding(16.dp),
                 color = if (error == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyLarge,
@@ -518,22 +562,22 @@ private fun NavigationDataPanel(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Navigation data", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        Text(localized("Navigation data", "导航数据"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         Text(
             navigationData?.cycle?.let { "AIRAC $it" }
                 ?: plan.airacCycle.takeIf(String::isNotBlank)?.let { "AIRAC $it" }
-                ?: "AIRAC cycle unavailable",
+                ?: localized("AIRAC cycle unavailable", "AIRAC 周期不可用"),
             style = MaterialTheme.typography.titleLarge,
         )
-        Text("Install a Navmap Mobile navigation-data package to resolve airports, fixes, and procedures locally. Keep the desktop Little Navmap library current for connected planning.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(localized("Install a Navmap Mobile navigation-data package to resolve airports, fixes, and procedures locally. Keep the desktop Little Navmap library current for connected planning.", "安装 Navmap Mobile 导航数据包，可在本地解析机场、航路点和程序。连接规划时请保持桌面版 Little Navmap 数据库为最新。"), color = MaterialTheme.colorScheme.onSurfaceVariant)
         Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth()) {
             Text(message, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
             if (FlightPlanCodec.canExportXPlaneFms(plan)) {
-                "Every route point has coordinates. X-Plane FMS export is available."
+                localized("Every route point has coordinates. X-Plane FMS export is available.", "所有航路点均已具备坐标，可导出 X-Plane FMS。")
             } else {
-                "This route still has unresolved coordinates. Import an LNM/FMS plan or resolve it in Little Navmap before exporting to X-Plane."
+                localized("This route still has unresolved coordinates. Import an LNM/FMS plan or resolve it in Little Navmap before exporting to X-Plane.", "此航路仍有未解析坐标。请导入 LNM/FMS 计划或在 Little Navmap 中解析后再导出 X-Plane。")
             },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -541,13 +585,13 @@ private fun NavigationDataPanel(
             onClick = onImport,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             shape = RoundedCornerShape(6.dp),
-        ) { Text("Install navigation data") }
+        ) { Text(localized("Install navigation data", "安装导航数据")) }
         if (!isConnected) {
             Button(onClick = onConnect, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) {
-                Text("Connect Little Navmap")
+                Text(localized("Connect Little Navmap", "连接 Little Navmap"))
             }
         } else {
-            Text("Connected. Update the navigation database in Little Navmap on your computer, then reconnect this mobile companion.")
+            Text(localized("Connected. Update the navigation database in Little Navmap on your computer, then reconnect this mobile companion.", "已连接。请在电脑端更新 Little Navmap 导航数据库，然后重新连接移动端。"))
         }
     }
 }
@@ -568,4 +612,20 @@ private fun NavigationDataPackage?.procedureOptions(
         ProcedureField.Approach -> plan.destination to ProcedureType.Approach
     }
     return this?.procedures(airport, procedureType).orEmpty()
+}
+
+@Composable
+private fun plannerDestinationTitle(destination: PlannerDestination): String = when (destination) {
+    PlannerDestination.Plan -> localized("Plan", "计划")
+    PlannerDestination.Map -> localized("Map", "地图")
+    PlannerDestination.Weather -> localized("Weather", "气象")
+    PlannerDestination.Simulator -> localized("Simulator", "模拟器")
+    PlannerDestination.Data -> localized("Data", "数据")
+}
+
+@Composable
+private fun procedureTitle(field: ProcedureField): String = when (field) {
+    ProcedureField.Sid -> localized("Departure procedure", "离场程序")
+    ProcedureField.Star -> localized("Arrival procedure", "进场程序")
+    ProcedureField.Approach -> localized("Approach", "进近程序")
 }

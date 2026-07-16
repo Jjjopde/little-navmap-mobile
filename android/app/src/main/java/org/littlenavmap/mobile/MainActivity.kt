@@ -13,9 +13,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.WindowCompat
+import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.littlenavmap.mobile.ui.LittleNavmapApp
 import org.littlenavmap.mobile.ui.LittleNavmapViewModel
@@ -31,6 +34,12 @@ class MainActivity : ComponentActivity() {
                 val viewModel: LittleNavmapViewModel = viewModel()
                 val view = LocalView.current
                 val isDarkTheme = androidx.compose.foundation.isSystemInDarkTheme()
+
+                LaunchedEffect(viewModel.appLanguage) {
+                    AppCompatDelegate.setApplicationLocales(
+                        LocaleListCompat.forLanguageTags(viewModel.appLanguage.tag),
+                    )
+                }
 
                 SideEffect {
                     WindowCompat.getInsetsController(window, view).apply {

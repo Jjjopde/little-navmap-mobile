@@ -40,14 +40,29 @@ certificate and hostname errors are never bypassed.
 ## Current scope
 
 The app is a local-first flight-planning companion for a running Little Navmap
-desktop instance. Its native planner supports departure, destination,
-alternate, cruise level, SID, STAR, approach, and an editable enroute sequence.
+desktop instance. Its native mobile planner is the primary workflow: it supports
+departure, destination, alternate, cruise level, SID, STAR, approach, and an
+editable enroute sequence directly on the phone. The native vector route map is
+drawn with Compose Canvas rather than a WebView or online tile provider, and
+shows resolved route points, airspace grid and zoom controls without network map
+latency.
 Plans can be imported from Little Navmap `.lnmpln`, X-Plane 11/12 `.fms`
 (v1100), the documented Little Navmap Mobile JSON format, or readable ICAO
 route text. They can be exported as Little Navmap Mobile JSON, readable ICAO
 route text, or an X-Plane 11/12 `.fms` (v1100) file when every route point has
 validated coordinates. Weather uses the public Aviation Weather METAR service
-when the device has Internet access.
+when the device has Internet access. The app supports an English/Chinese
+language switch from the upper-right corner. ICAO identifiers and aviation
+terminology such as SID, STAR, AIRAC, METAR and X-Plane remain in English.
+
+The connection workspace contains three provider panels. Little Navmap connects
+to a local desktop Web API. SimBrief imports the newest released dispatch using
+the user's public SimBrief username and does not ask for a password. Navigraph
+imports a flight-plan export URL using a user-issued OAuth bearer token. The
+token is held only in memory, is cleared after a successful import and is never
+written to preferences. Navigraph OAuth applications require a Client ID and
+redirect URI registered with Navigraph; this app deliberately does not embed a
+shared client secret or collect Navigraph credentials.
 
 Simulator live data, the map, airport information, and desktop navigation-data
 resolution remain available through the Little Navmap Web API. Connect the

@@ -25,6 +25,8 @@ import org.littlenavmap.mobile.model.ServerProfile
 import org.littlenavmap.mobile.model.XPlaneEndpoint
 import org.littlenavmap.mobile.model.XPlaneSnapshot
 import org.littlenavmap.mobile.network.ServerProbe
+import org.littlenavmap.mobile.network.NavigraphFlightPlanClient
+import org.littlenavmap.mobile.network.SimBriefFlightPlanClient
 import org.littlenavmap.mobile.network.XPlaneRrefClient
 
 internal enum class ConnectionPhase {
@@ -60,13 +62,30 @@ internal data class XPlaneUiState(
     val errorMessage: String? = null,
 )
 
+internal data class SimBriefUiState(
+    val username: String = "",
+    val isImporting: Boolean = false,
+    val message: String? = null,
+)
+
+/** Credentials are intentionally transient and never written to SharedPreferences. */
+internal data class NavigraphUiState(
+    val exportUrl: String = "",
+    val accessToken: String = "",
+    val isImporting: Boolean = false,
+    val message: String? = null,
+)
+
 class LittleNavmapViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = PreferencesRepository(application)
     private val navigationDataRepository = NavigationDataRepository(application)
     private val serverProbe = ServerProbe()
     private val xPlaneClient = XPlaneRrefClient()
+    private val simBriefClient = SimBriefFlightPlanClient()
+    private val navigraphClient = NavigraphFlightPlanClient()
     private var probeJob: Job? = null
     private var xPlaneJob: Job? = null
+    private var cloudImportJob: Job? = null
 
     internal var uiState by mutableStateOf(
         LittleNavmapUiState(keepScreenOn = preferences.keepScreenOn()),
@@ -79,11 +98,20 @@ class LittleNavmapViewModel(application: Application) : AndroidViewModel(applica
     internal var navigationData by mutableStateOf(navigationDataRepository.load())
         private set
 
+    internal var appLanguage by mutableStateOf(preferences.appLanguage())
+        private set
+
     internal var xPlaneUiState by mutableStateOf(
         preferences.loadXPlaneEndpoint()?.let { endpoint ->
             XPlaneUiState(host = endpoint.host, port = endpoint.port.toString())
         } ?: XPlaneUiState(),
     )
+        private set
+
+    internal var simBriefUiState by mutableStateOf(SimBriefUiState())
+        private set
+
+    internal var navigraphUiState by mutableStateOf(NavigraphUiState())
         private set
 
     init {
@@ -160,6 +188,77 @@ class LittleNavmapViewModel(application: Application) : AndroidViewModel(applica
     internal fun updateFlightPlan(plan: FlightPlan) {
         flightPlan = navigationData?.resolve(plan) ?: plan
         preferences.saveFlightPlan(flightPlan)
+    }
+
+    internal fun setAppLanguage(language: AppLanguage) {
+        appLanguage = language
+        preferences.setAppLanguage(language)
+    }
+
+    internal fun updateSimBriefUsername(username: String) {
+        if (!simBriefUiState.isImporting) {
+            simBriefUiState = simBriefUiState.copy(username = username.take(MAX_USERNAME_LENGTH), message = null)
+        }
+    }
+
+    internal fun importSimBrief() {
+        cloudImportJob?.cancel()
+        simBriefUiState = simBriefUiState.copy(isImporting = true, message = null)
+        cloudImportJob = viewModelScope.launch {
+            runCatching { simBriefClient.fetch(simBriefUiState.username) }
+                .onSuccess { imported ->
+                    updateFlightPlan(imported)
+                    simBriefUiState = simBriefUiState.copy(
+                        isImporting = false,
+                        message = "SimBrief flight plan imported.",
+                    )
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    simBriefUiState = simBriefUiState.copy(
+                        isImporting = false,
+                        message = error.message ?: "SimBrief import failed.",
+                    )
+                }
+        }
+    }
+
+    internal fun updateNavigraphExportUrl(url: String) {
+        if (!navigraphUiState.isImporting) {
+            navigraphUiState = navigraphUiState.copy(exportUrl = url.take(MAX_CLOUD_FIELD_LENGTH), message = null)
+        }
+    }
+
+    internal fun updateNavigraphAccessToken(token: String) {
+        if (!navigraphUiState.isImporting) {
+            navigraphUiState = navigraphUiState.copy(accessToken = token.take(MAX_CLOUD_FIELD_LENGTH), message = null)
+        }
+    }
+
+    internal fun importNavigraph() {
+        cloudImportJob?.cancel()
+        navigraphUiState = navigraphUiState.copy(isImporting = true, message = null)
+        cloudImportJob = viewModelScope.launch {
+            runCatching {
+                navigraphClient.fetch(
+                    exportUrl = navigraphUiState.exportUrl,
+                    accessToken = navigraphUiState.accessToken,
+                )
+            }.onSuccess { imported ->
+                updateFlightPlan(imported)
+                navigraphUiState = navigraphUiState.copy(
+                    accessToken = "",
+                    isImporting = false,
+                    message = "Navigraph flight plan imported.",
+                )
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                navigraphUiState = navigraphUiState.copy(
+                    isImporting = false,
+                    message = error.message ?: "Navigraph import failed.",
+                )
+            }
+        }
     }
 
     internal fun importNavigationData(content: String): Result<NavigationDataPackage> = runCatching {
@@ -295,5 +394,7 @@ class LittleNavmapViewModel(application: Application) : AndroidViewModel(applica
 
     private companion object {
         const val MAX_PORT_LENGTH = 5
+        const val MAX_USERNAME_LENGTH = 64
+        const val MAX_CLOUD_FIELD_LENGTH = 2_000
     }
 }

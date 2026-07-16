@@ -13,11 +13,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
 
 private enum class AppSurface {
     Planner,
     Connection,
-    LiveMap,
 }
 
 @Composable
@@ -30,13 +30,11 @@ fun LittleNavmapApp(
 
     LaunchedEffect(surface, state.phase) {
         if (surface == AppSurface.Connection && state.phase == ConnectionPhase.Connected) {
-            surface = AppSurface.LiveMap
-        }
-        if (surface == AppSurface.LiveMap && state.phase != ConnectionPhase.Connected) {
             surface = AppSurface.Planner
         }
     }
 
+    CompositionLocalProvider(LocalAppLanguage provides viewModel.appLanguage) {
     when (surface) {
         AppSurface.Planner -> FlightPlanningScreen(
             plan = viewModel.flightPlan,
@@ -48,9 +46,17 @@ fun LittleNavmapApp(
             onXPlanePortChange = viewModel::updateXPlanePort,
             onXPlaneConnect = viewModel::connectXPlane,
             onXPlaneRefresh = viewModel::refreshXPlane,
+            appLanguage = viewModel.appLanguage,
+            onLanguageChange = viewModel::setAppLanguage,
+            simBriefState = viewModel.simBriefUiState,
+            onSimBriefUsernameChange = viewModel::updateSimBriefUsername,
+            onSimBriefImport = viewModel::importSimBrief,
+            navigraphState = viewModel.navigraphUiState,
+            onNavigraphExportUrlChange = viewModel::updateNavigraphExportUrl,
+            onNavigraphTokenChange = viewModel::updateNavigraphAccessToken,
+            onNavigraphImport = viewModel::importNavigraph,
             isConnected = state.phase == ConnectionPhase.Connected,
             onConnect = { surface = AppSurface.Connection },
-            onOpenLiveMap = { surface = AppSurface.LiveMap },
         )
         AppSurface.Connection -> ConnectionScreen(
             state = state,
@@ -59,21 +65,16 @@ fun LittleNavmapApp(
             onPortChanged = viewModel::updatePort,
             onConnect = viewModel::connect,
             onBack = { surface = AppSurface.Planner },
+            appLanguage = viewModel.appLanguage,
+            onLanguageChange = viewModel::setAppLanguage,
+            simBriefState = viewModel.simBriefUiState,
+            onSimBriefUsernameChange = viewModel::updateSimBriefUsername,
+            onSimBriefImport = viewModel::importSimBrief,
+            navigraphState = viewModel.navigraphUiState,
+            onNavigraphExportUrlChange = viewModel::updateNavigraphExportUrl,
+            onNavigraphTokenChange = viewModel::updateNavigraphAccessToken,
+            onNavigraphImport = viewModel::importNavigraph,
         )
-        AppSurface.LiveMap -> {
-            val profile = state.profile
-            if (state.phase == ConnectionPhase.Connected && profile != null) {
-                ConnectedScreen(
-                    profile = profile,
-                    keepScreenOn = state.keepScreenOn,
-                    onKeepScreenOnChanged = viewModel::setKeepScreenOn,
-                    onDisconnect = {
-                        viewModel.disconnect()
-                        surface = AppSurface.Planner
-                    },
-                    onExit = { surface = AppSurface.Planner },
-                )
-            }
-        }
+    }
     }
 }

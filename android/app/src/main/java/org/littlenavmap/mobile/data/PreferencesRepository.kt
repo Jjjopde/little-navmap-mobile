@@ -14,6 +14,7 @@ import org.littlenavmap.mobile.model.FlightPlan
 import org.littlenavmap.mobile.model.FlightPlanCodec
 import org.littlenavmap.mobile.model.ServerProfile
 import org.littlenavmap.mobile.model.XPlaneEndpoint
+import org.littlenavmap.mobile.ui.AppLanguage
 
 /** Persists connection settings without retaining credentials or response data. */
 class PreferencesRepository(context: Context) {
@@ -98,6 +99,14 @@ class PreferencesRepository(context: Context) {
         preferences.edit { putString(KEY_FLIGHT_PLAN, FlightPlanCodec.encode(plan)) }
     }
 
+    internal fun appLanguage(): AppLanguage = AppLanguage.fromTag(
+        preferences.getString(KEY_APP_LANGUAGE, AppLanguage.English.tag),
+    )
+
+    internal fun setAppLanguage(language: AppLanguage) {
+        preferences.edit { putString(KEY_APP_LANGUAGE, language.tag) }
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "little_navmap_mobile"
         const val KEY_SCHEME = "server_scheme"
@@ -107,5 +116,6 @@ class PreferencesRepository(context: Context) {
         const val KEY_FLIGHT_PLAN = "flight_plan"
         const val KEY_XPLANE_HOST = "xplane_host"
         const val KEY_XPLANE_PORT = "xplane_port"
+        const val KEY_APP_LANGUAGE = "app_language"
     }
 }

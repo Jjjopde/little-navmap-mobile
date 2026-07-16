@@ -45,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -425,7 +426,11 @@ private fun ProcedureRow(label: String, value: String, onClick: () -> Unit) {
     ) {
         Text(label, modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value.ifBlank { "Select" }, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Icon(painterResource(R.drawable.ic_arrow_back), "Select $label", modifier = Modifier.size(18.dp))
+        Icon(
+            painter = painterResource(R.drawable.ic_arrow_back),
+            contentDescription = "Select $label",
+            modifier = Modifier.size(18.dp).graphicsLayer(rotationZ = 180f),
+        )
     }
 }
 

@@ -1,0 +1,101 @@
+/*****************************************************************************
+* Copyright 2015-2026 Alexander Barthel alex@littlenavmap.org
+*
+* This program is free software: you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation, either version 3 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*****************************************************************************/
+
+#include "search/querybuilder.h"
+
+#include <QCheckBox>
+#include <QComboBox>
+#include <QLineEdit>
+#include <QSpinBox>
+
+QueryBuilderResultList QueryBuilder::build() const
+{
+  QueryBuilderResultList result;
+  if(func)
+  {
+    for(const QueryWidget& queryWidget : queryWidgets)
+    {
+      if(queryWidget.isWidgetEnabled())
+        result.append(func(queryWidget));
+    }
+  }
+  return result;
+}
+
+const QList<QLineEdit *> QueryBuilder::getLineEditWidgets() const
+{
+  QList<QLineEdit *> widgets;
+  for(const QueryWidget& queryWidget : queryWidgets)
+    widgets.append(queryWidget.getLineEditWidget());
+  return widgets;
+}
+
+const QStringList QueryBuilder::getColumns() const
+{
+  QStringList columns;
+  for(const QueryWidget& queryWidget : queryWidgets)
+    columns.append(queryWidget.getColumns());
+  return columns;
+}
+
+void QueryBuilder::resetWidgets()
+{
+  for(const QueryWidget& queryWidget : std::as_const(queryWidgets))
+  {
+    QWidget *widget = queryWidget.getWidget();
+    if(widget != nullptr)
+    {
+      QLineEdit *lineEdit = dynamic_cast<QLineEdit *>(widget);
+      if(lineEdit != nullptr)
+        lineEdit->clear();
+
+      QCheckBox *check = dynamic_cast<QCheckBox *>(widget);
+      if(check != nullptr)
+        check->setCheckState(check->isTristate() ? Qt::PartiallyChecked : Qt::Unchecked);
+
+      QSpinBox *spin = dynamic_cast<QSpinBox *>(widget);
+      if(spin != nullptr)
+        spin->setValue(0);
+
+      QComboBox *cb = dynamic_cast<QComboBox *>(widget);
+      if(cb != nullptr)
+      {
+        if(cb->isEditable())
+        {
+          cb->setCurrentText(QStringLiteral());
+          cb->setCurrentIndex(-1);
+        }
+        else
+          cb->setCurrentIndex(0);
+      }
+    }
+  }
+}
+
+QLineEdit *QueryWidget::getLineEditWidget() const
+{
+  QComboBox *comboBox = dynamic_cast<QComboBox *>(widget);
+  if(comboBox != nullptr)
+    return comboBox->lineEdit();
+  else
+    return dynamic_cast<QLineEdit *>(widget);
+}
+
+bool QueryWidget::isWidgetEnabled() const
+{
+  return widget != nullptr && widget->isEnabled();
+}

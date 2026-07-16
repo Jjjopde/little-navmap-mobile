@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Local Little Navmap web servers commonly use plain HTTP. HTTPS still
+         uses Android's system trust store and certificate validation. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- Users can explicitly install a CA for a private HTTPS server. -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

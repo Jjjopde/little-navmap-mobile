@@ -1,0 +1,303 @@
+/*****************************************************************************
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+*
+* This program is free software: you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation, either version 3 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*****************************************************************************/
+
+#ifndef LITTLENAVMAP_PAINTCONTEXT_H
+#define LITTLENAVMAP_PAINTCONTEXT_H
+
+#include "common/mapflags.h"
+#include "common/mapflagstext.h"
+#include "geo/rect.h"
+#include "options/optionflags.h"
+
+#include <marble/GeoDataLatLonBox.h>
+#include <marble/MarbleGlobal.h>
+
+#include <QPen>
+#include <QFont>
+#include <QDateTime>
+#include <QCoreApplication>
+
+namespace atools {
+namespace geo {
+class Line;
+}
+}
+namespace Marble {
+class GeoPainter;
+class ViewportParams;
+}
+
+class MapLayer;
+class Route;
+
+namespace map {
+struct MapRef;
+}
+
+/* Struct that is passed to all painters. It is created from scratch for each paint event. */
+struct PaintContext
+{
+  const MapLayer *mapLayer, /* Layer for the current zoom distance also affected by detail level
+                             * Used for visibility of map objects */
+                 *mapLayerText, /* layer for the current zoom distance also affected by text and label detail level
+                                 * Used for visibility of labels */
+                 *mapLayerEffective, /* Layer for the current zoom distance not affected by detail level.
+                                      *  Used to determine text visibility and object sizes. */
+                 *mapLayerRoute, /* Layer for the current zoom distance and more details for route. */
+                 *mapLayerRouteText; /* Layer for the current zoom distance and more details for route labels. */
+
+  Marble::GeoPainter *painter;
+  Marble::ViewportParams *viewport;
+  Marble::GeoDataLatLonBox viewportBox;
+  Marble::ViewContext viewContext; /* Either Animation or Still */
+  float zoomDistanceMeter;
+
+  bool drawFast; /* true if reduced details should be used */
+  bool lazyUpdate; /* postpone reloading until map is still */
+  bool darkMap; /* CartoDark or similar. Not Night mode */
+
+  map::MapTypes objectTypes; /* Object types that should be drawn */
+  map::MapDisplayTypes objectDisplayTypes; /* Object types that should be drawn */
+  map::MapAirspaceFilter airspaceFilterByLayer; /* Airspaces */
+  map::MapAirspaceType airspaceTextsByLayer;
+
+  atools::geo::Rect viewportRect; /* Rectangle of current viewport */
+  QRect screenRect; /* Screen coordinate rect */
+
+  opts::MapScrollDetail mapScrollDetail; /* Option that indicates the detail level when drawFast is true */
+  QFont defaultFont /* Default widget font */;
+  float distanceNm; /* Zoom distance in NM */
+  float distanceKm; /* Zoom distance in KM as in map widget */
+  const QMap<QString, QString> *userPointTypes, /* In menu selected types */
+                               *userPointTypesAll; /* All available tyes */
+  bool userPointTypeUnknown; /* Show unknown types */
+
+  const Route *route;
+
+  optsac::DisplayOptionsUserAircraft dispOptsUser;
+  optsac::DisplayOptionsAiAircraft dispOptsAi;
+  optsd::DisplayOptionsAirport dispOptsAirport;
+  optsd::DisplayOptionsRose dispOptsRose;
+  optsd::DisplayOptionsMeasurement dispOptsMeasurement;
+  optsd::DisplayOptionsRoute dispOptsRoute;
+
+  /* ===============================================================================
+   * Flags from options dialog */
+  opts::Flags flags;
+  opts2::Flags2 flags2;
+
+  map::MapWeatherSource weatherSource;
+  bool visibleWidget;
+  bool paintCopyright = true, paintWindHeader = true, webMap = false, paintNavigation = true;
+  int mimimumRunwayLengthFt = -1, maximumRunwayLengthFt = -1; /* Value from toolbar */
+  int currentDistanceMarkerId = -1, currentHoldingMarkerId = -1, currentRangeMarkerId = -1;
+
+  /* ===============================================================================
+   * Ids which are filled during painting and are passes between painters */
+
+  // All waypoints from the route and add them to the map to avoid duplicate drawing
+  // Same for procedure preview
+  QSet<map::MapRef> routeProcIdMap, /* Navaids on plan */
+                    routeProcIdMapRec /* Recommended navaids */;
+
+  /* Airports drawn having parking spots which require tooltips and more */
+  QSet<int> *shownParkingAirportIds;
+
+  /* Airports drawn having runway hotspots which require tooltips and more */
+  QSet<int> *shownRunwayAirportIds;
+
+  /* All navaids drawn for route and procedures. Points to list in MapScreenIndex */
+  QList<map::MapRef> *routeDrawnNavaids;
+
+  /* Global scale applied to all features, labels and symbols */
+  float sizeAll = 1.f;
+
+  /* ===============================================================================
+   * Text sizes and line thickness in percent / 100 as set in options dialog. To be used with szF() or szFont() */
+  float textSizeAircraftAi = 1.f;
+  float symbolSizeNavaid = 1.f;
+  float symbolSizeUserpoint = 1.f;
+  float symbolSizeHighlight = 1.f;
+  float thicknessFlightplan = 1.f;
+  float textSizeNavaid = 1.f;
+  float textSizeAirspace = 1.f;
+  float textSizeUserpoint = 1.f;
+  float textSizeAirway = 1.f;
+  float thicknessAirway = 1.f;
+  float textSizeCompassRose = 1.f;
+  float textSizeRangeMarker = 1.f;
+  float textSizeRangeMeasurement = 1.f;
+  float symbolSizeAirport = 1.f;
+  float symbolSizeAirportWeather = 1.f;
+  float symbolSizeWindBarbs = 1.f;
+  float symbolSizeAircraftAi = 1.f;
+  float symbolSizeRoute = 1.f;
+  float textSizeRoute = 1.f;
+  float textSizeAircraftUser = 1.f;
+  float symbolSizeAircraftUser = 1.f;
+  float textSizeAirport = 1.f;
+  float textSizeAirportRunway = 1.f;
+  float textSizeAirportTaxiway = 1.f;
+  float thicknessTrail = 1.f;
+  float thicknessMapMarker = 1.f;
+  float thicknessMeasurement = 1.f;
+  float thicknessCompassRose = 1.f;
+  float textSizeMora = 1.f;
+  float transparencyMora = 1.f;
+  float textSizeAirportMsa = 1.f;
+  float transparencyAirportMsa = 1.f;
+  float transparencyFlightplan = 1.f;
+  float transparencyHighlight = 1.f;
+
+  int objectCount = 0;
+  bool queryOverflow = false;
+
+  /* Increase drawn object count and return true if exceeded */
+  bool objCount()
+  {
+    objectCount++;
+    return objectCount >= map::MAX_MAP_OBJECTS;
+  }
+
+  bool isObjectOverflow() const
+  {
+    return objectCount >= map::MAX_MAP_OBJECTS;
+  }
+
+  int getObjectCount() const
+  {
+    return objectCount;
+  }
+
+  void setQueryOverflow(bool overflow)
+  {
+    queryOverflow |= overflow;
+  }
+
+  bool isQueryOverflow() const
+  {
+    return queryOverflow;
+  }
+
+  bool  dOptUserAc(optsac::DisplayOptionsUserAircraft opts) const
+  {
+    return dispOptsUser.testAnyFlag(opts);
+  }
+
+  bool  dOptAiAc(optsac::DisplayOptionsAiAircraft opts) const
+  {
+    return dispOptsAi.testAnyFlag(opts);
+  }
+
+  bool  dOptAp(optsd::DisplayOptionsAirport opts) const
+  {
+    return dispOptsAirport.testAnyFlag(opts);
+  }
+
+  bool  dOptRose(optsd::DisplayOptionsRose opts) const
+  {
+    return dispOptsRose.testAnyFlag(opts);
+  }
+
+  bool  dOptMeasurement(optsd::DisplayOptionsMeasurement opts) const
+  {
+    return dispOptsMeasurement.testAnyFlag(opts);
+  }
+
+  bool  dOptRoute(optsd::DisplayOptionsRoute opts) const
+  {
+    return dispOptsRoute.testAnyFlag(opts);
+  }
+
+  /* Calculate real symbol sizes */
+  float szF(float scale, int size) const
+  {
+    return scale * size * sizeAll;
+  }
+
+  float szF(float scale, float size) const
+  {
+    return scale * size * sizeAll;
+  }
+
+  float szF(float scale, double size) const
+  {
+    return scale * static_cast<float>(size) * sizeAll;
+  }
+
+  /* Calculate and set font based on scale */
+  void szFont(float scale) const;
+
+  /* Calculate label text flags for route waypoints depending on layer settings */
+  text::Flag airportTextFlags(bool minor) const
+  {
+    return minor ? airportTextFlagsMinor() : airportTextFlags();
+  }
+
+  text::Flag airportTextFlags() const;
+  text::Flag airportTextFlagsMinor() const;
+  text::Flag airportTextFlagsRoute() const;
+  text::Flag airportTextFlagsLog() const;
+
+  text::Attribute airportTextAtts(bool minor) const
+  {
+    return minor ? airportTextAttsMinor() : airportTextAtts();
+  }
+
+  text::Attribute airportTextAtts() const;
+  text::Attribute airportTextAttsMinor() const;
+  text::Attribute airportTextAttsRoute() const;
+  text::Attribute textAttsLog() const;
+
+  void startTimer(const QString& label)
+  {
+    if(verboseDraw)
+      renderTimesMs.insert(label, QDateTime::currentMSecsSinceEpoch());
+  }
+
+  void endTimer(const QString& label)
+  {
+    if(verboseDraw)
+      renderTimesMs.insert(label, QDateTime::currentMSecsSinceEpoch() - renderTimesMs.value(label));
+  }
+
+  void clearTimer()
+  {
+    if(verboseDraw)
+      renderTimesMs.clear();
+  }
+
+  /*  Checks visibility by testing overlap with global viewport rect. */
+  bool visible(const atools::geo::Rect& rect) const
+  {
+    return viewportRect.overlaps(rect);
+  }
+
+  /* Does work only properly for short lines due to GC path.
+   * Checks visibility by testing overlap with global viewport rect and tests if rect is large enought to show.
+   * Use for features which are not limited by zoom factor. */
+  bool visibleAndResolves(const atools::geo::Line& line) const;
+
+  /*  Checks visibility by testing overlap with global viewport rect and tests if rect is large enought to show.
+   * Use for features which are not limited by zoom factor. */
+  bool visibleAndResolves(const atools::geo::Rect& rect) const;
+
+  bool verboseDraw = false;
+  QMap<QString, qint64> renderTimesMs;
+};
+
+#endif // LITTLENAVMAP_PAINTCONTEXT_H

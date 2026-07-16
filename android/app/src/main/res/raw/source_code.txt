@@ -1,0 +1,31 @@
+CORRESPONDING SOURCE CODE
+
+Little Navmap Mobile is free software licensed under the GNU General Public
+License, version 3 or (at your option) any later version.
+
+The source for this unofficial Android adaptation, including its build
+scripts, is the android/ directory in the source package supplied with this
+APK. The adaptation was initially based on Little Navmap revision:
+
+bb2ac07934fcda6ccdf5b246394903e78e7a32ce
+
+The original Little Navmap source repository is:
+
+https://github.com/albar965/littlenavmap
+
+The upstream repository might not contain the unofficial Android adaptation.
+To obtain the exact Corresponding Source used to build this APK, use the
+matching source package supplied by the APK distributor. If the package is
+missing, request it from the person or site that supplied the APK.
+
+Anyone who redistributes this APK must also provide the complete corresponding
+source, or another source-access method permitted by section 6 of GPLv3. The
+source must match the distributed APK, including Android modifications and
+the scripts needed to build it.
+
+BUILDING
+
+Install JDK 17 and Android SDK Platform 36, then run from android/:
+
+  gradlew.bat :app:assembleDebug     (Windows)
+  ./gradlew :app:assembleDebug       (macOS or Linux)

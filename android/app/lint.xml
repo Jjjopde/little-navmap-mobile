@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- These versions are pinned as one tested Kotlin/Compose/AGP toolchain. -->
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+    <issue id="GradleDependency" severity="ignore" />
+
+    <!-- Little Navmap's local web server uses HTTP by default on port 8965. -->
+    <issue id="InsecureBaseConfiguration">
+        <ignore path="src/main/res/xml/network_security_config.xml" />
+    </issue>
+
+    <!-- Private Little Navmap HTTPS servers may use an owner-installed CA. -->
+    <issue id="AcceptsUserCertificates">
+        <ignore path="src/main/res/xml/network_security_config.xml" />
+    </issue>
+</lint>

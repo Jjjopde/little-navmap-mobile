@@ -1,0 +1,632 @@
+/*****************************************************************************
+* Copyright 2015-2025 Alexander Barthel alex@littlenavmap.org
+*
+* This program is free software: you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation, either version 3 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*****************************************************************************/
+
+#ifndef LITTLENAVMAP_NAVMAPPAINTWIDGET_H
+#define LITTLENAVMAP_NAVMAPPAINTWIDGET_H
+
+#include "common/mapflags.h"
+#include "geo/pos.h"
+#include "options/optionchangeflags.h"
+#include "query/querymanager.h"
+
+#include <marble/GeoDataLatLonAltBox.h>
+#include <marble/MarbleWidget.h>
+
+class MapTheme;
+
+namespace map {
+struct MapResult;
+struct MapRef;
+struct RangeMarker;
+struct DistanceMarker;
+struct PatternMarker;
+struct HoldingMarker;
+struct MsaMarker;
+struct MapHolding;
+struct MapAirportMsa;
+struct MapAirspace;
+struct MapAirway;
+}
+
+namespace atools {
+namespace fs {
+namespace sc {
+class SimConnectUserAircraft;
+class SimConnectData;
+class SimConnectAircraft;
+}
+}
+
+namespace geo {
+class Rect;
+}
+namespace fs {
+class SimConnectData;
+}
+}
+
+class MainWindow;
+class MapPaintLayer;
+class MapScreenIndex;
+class MapCache;
+class MapLayer;
+class AircraftTrail;
+class MapMarkers;
+
+namespace proc {
+struct MapProcedureLeg;
+
+struct MapProcedureLegs;
+
+}
+
+/*
+ * Contains all functions to draw a map including background, flight plan, navaids and whatnot.
+ * Independent of GUI. Can use any resolution independent of visible map window.
+ * Usable for map image export and printing.
+ *
+ * Not fully independent of map widget since options are still used from dialog.
+ *
+ * Does not contain any UI and mouse/keyboard interaction.
+ */
+class MapPaintWidget :
+  public Marble::MarbleWidget, public Lockable
+{
+  Q_OBJECT
+
+public:
+  explicit MapPaintWidget(QWidget *parent, Queries *queriesParam, bool visibleWidgetParam, bool webParam);
+  virtual ~MapPaintWidget() override;
+
+  MapPaintWidget(const MapPaintWidget& other) = delete;
+  MapPaintWidget& operator=(const MapPaintWidget& other) = delete;
+
+  /* Copy all map display settings, highlights and marks from the other widget.
+   * Theme is set from MapThemeManager and projection is always set to Mercator.
+   * Also copies full aircraft trail if deep = true and trail is different. Does not copy profile trail. */
+  void copySettings(const MapPaintWidget& other, bool deep);
+
+  /* Copies the bounding rectangle to this one which will be centered on next resize. */
+  void copyView(const MapPaintWidget& other);
+
+  /* streamlined for webmapcontroller from showPosInternal(pos, distanceKm, doubleClick, false) */
+  void showPosNotAdjusted(const atools::geo::Pos& pos, float distanceKm);
+
+  /* Jump to position on the map using the given zoom distance.
+   *  Keep current zoom if  distanceNm is INVALID_DISTANCE_VALUE.
+   *  Use predefined zoom if distanceNm is 0 */
+  void showPos(const atools::geo::Pos& pos, float distanceKm, bool doubleClick);
+
+  /* Show the bounding rectangle on the map */
+  void showRect(const atools::geo::Rect& rect, bool doubleClick);
+
+  /* streamlined for webmapcontroller from showRect(rect, false)
+   *  constrainDistance determines whether map distance should be constrained by OptionData values */
+  void showRectStreamlined(const atools::geo::Rect& rect, bool constrainDistance = true);
+
+  /* Show user simulator aircraft. state is tool button state */
+  void showAircraft(bool centerAircraftChecked);
+  void showAircraftNow(bool);
+
+  /* Update highlighted objects from search and route table */
+  void changeSearchHighlights(const map::MapResult& newHighlights, bool updateAirspace, bool updateLogEntries);
+  void changeRouteHighlights(const QList<int>& routeHighlight);
+
+  /* Highlight a point along the route while mouse over in the profile window */
+  void changeProfileHighlight(const atools::geo::Pos& pos);
+
+  /* Update procedure highlights, update screen index and redraw map */
+  void changeProcedureHighlight(const proc::MapProcedureLegs& procedure);
+  void changeProcedureHighlights(const QList<proc::MapProcedureLegs>& procedures);
+  void changeProcedureLegHighlight(const proc::MapProcedureLeg& procedureLeg);
+
+  /* Update route screen coordinate index */
+  void routeChanged(bool geometryChanged);
+  void routeAltitudeChanged(float);
+
+  /* Stop showing aircraft position on map */
+  void disconnectedFromSimulator();
+
+  /* Clear previous aircraft track */
+  void connectedToSimulator();
+
+  /* Add a KML file to map display. The file will be restored on program startup */
+  bool addKmlFile(const QString& kmlFile);
+
+  /* Remove all KML files from map */
+  void clearKmlFiles();
+
+  const atools::geo::Pos& getSearchMarkPos() const
+  {
+    return searchMarkPos;
+  }
+
+  const atools::geo::Pos& getHomePos() const
+  {
+    return homePos;
+  }
+
+  /* Getters used by the painters */
+  const map::MapResult& getSearchHighlights() const;
+
+  /* Procedure preview. Delegates to map screen index. */
+  const proc::MapProcedureLegs& getProcedureHighlight() const;
+  const QList<proc::MapProcedureLegs>& getProcedureHighlights() const;
+  const proc::MapProcedureLeg& getProcedureLegHighlight() const;
+
+  const QList<int>& getRouteHighlights() const;
+
+  const atools::geo::Pos& getProfileHighlight() const;
+
+  void clearSearchHighlights();
+  void clearRouteHighlights();
+
+  /* true if any highlighting circles are to be drawn on the map */
+  bool hasHighlights() const;
+
+  /* true if range rings, measurments or other markers are loaded */
+  bool hasAnyMapMarkers() const;
+
+  const AircraftTrail& getAircraftTrail() const
+  {
+    return *aircraftTrail;
+  }
+
+  const AircraftTrail& getAircraftTrailLogbook() const
+  {
+    return *aircraftTrailLogbook;
+  }
+
+  /* Current size */
+  int getAircraftTrailSize() const;
+
+  /* Maximum entries stored in trail */
+  int getMaxStoredTrailEntries() const;
+
+  /* Disconnect painter to avoid updates while no data is available */
+  void preDatabaseLoad();
+
+  /* Changes in options dialog */
+  virtual void optionsChanged(const optc::OptionChangeFlags& changeFlags);
+
+  /* GUI style has changed */
+  void styleChanged();
+
+  /* Update map */
+  void postDatabaseLoad();
+
+  /* Set map theme. * themeId: "google-maps-def",  theme: "earth/google-maps-def/google-maps-def.dgml" or full path */
+  void setTheme(const MapTheme& theme);
+
+  /* Show points of interest and other labels for certain map themes */
+  void setShowMapPois(bool show);
+
+  /* Globe shadow */
+  void setShowMapSunShading(bool show);
+  void setSunShadingDateTime(const QDateTime& datetime, bool force);
+  QDateTime getSunShadingDateTime() const;
+
+  /* Define which airport or navaid types are shown on the map. Updates screen index on demand. */
+  void setShowMapObject(map::MapTypes type, bool show);
+  void setShowMapObjects(map::MapTypes type, map::MapTypes mask);
+  void setShowMapObjectDisplay(map::MapDisplayTypes type, bool show);
+  void setShowMapAirspaces(const map::MapAirspaceFilter& types);
+
+  /* All currently set map display filters */
+  const map::MapTypes getShownMapTypes() const;
+  const map::MapDisplayTypes getShownMapDisplayTypes() const;
+  const map::MapAirspaceFilter& getShownAirspaces() const;
+  const map::MapAirspaceFilter getShownAirspaceTypesForLayer() const;
+
+  /* User aircraft as shown on the map */
+  const atools::fs::sc::SimConnectUserAircraft& getUserAircraft() const;
+  const atools::fs::sc::SimConnectData& getSimConnectData() const;
+
+  /* AI aircraft as shown on the map */
+  const QList<atools::fs::sc::SimConnectAircraft>& getAiAircraft() const;
+
+  /* Get currently loaded KML file paths */
+  const QStringList& getKmlFiles() const
+  {
+    return kmlFilePaths;
+  }
+
+  /* Update indexes for online network changes */
+  void onlineClientAndAtcUpdated();
+
+  /* Whole online network has changed */
+  void onlineNetworkChanged();
+
+  /* Redraw map to reflect weather changes */
+  void weatherUpdated();
+
+  /* Redraw map to reflect wind barb changes */
+  void windDisplayUpdated();
+
+  /* Airspaces and airways from the information window are kept in separate lists */
+  void changeAirspaceHighlights(const QList<map::MapAirspace>& airspaces);
+  void changeAirwayHighlights(const QList<QList<map::MapAirway> >& airways);
+
+  /* Highlights from clicking "Map" in information window */
+  const QList<map::MapAirspace>& getAirspaceHighlights() const;
+  const QList<QList<map::MapAirway> >& getAirwayHighlights() const;
+
+  /* Airspace highlights from info window */
+  void clearAirspaceHighlights();
+  void clearAirspaceHighlightsNormal();
+  void clearAirspaceHighlightsOnline();
+
+  /* Airway highlights from info window */
+  void clearAirwayHighlights();
+
+  /* Avoids dark background when printing in night mode */
+  void setPrinting(bool value)
+  {
+    printing = value;
+  }
+
+  bool isPrinting() const
+  {
+    return printing;
+  }
+
+  /* Create json document with coordinates for AviTab configuration. Returns empty string if map is out of bounds.
+   *  Requires Mercator projection. */
+  QString createAvitabJson();
+
+  /* Override for MapWidget with empty implementation ========================== */
+  virtual void jumpBackToAircraftCancel();
+
+  /* Draw empty rect if not active to avoid graphic clutter */
+  void setActive(bool value = true)
+  {
+    active = value;
+  }
+
+  bool isActive() const
+  {
+    return active;
+  }
+
+  /* Try several iterations to show the given rectangele as precise as possible.
+   * More CPU intense than other functions.
+   * Returns true if view was corrected by zooming. */
+  void centerRectOnMapPrecise(const Marble::GeoDataLatLonBox& rect);
+  void centerRectOnMapPrecise(const atools::geo::Rect& rect);
+
+  /* Resizes the widget if pixmapWidth and pixmapHeight are bigger than 0 and returns map content as pixmap.
+   * ignoreUiScale = false means that user interface scaling is not corrected and the resulting image size can be bigger.
+   * ignoreUiScale = returns the requested image size */
+  QPixmap getPixmap(int pixmapWidth = -1, int pixmapHeight = -1, bool ignoreUiScale = true);
+  QPixmap getPixmap(const QSize& size);
+
+  /* Prepare Marble widget drawing with a dummy paint event without drawing navaids */
+  void prepareDraw(const QSize& size);
+
+  bool isAvoidBlurredMap() const
+  {
+    return avoidBlurredMap;
+  }
+
+  void setAvoidBlurredMap(bool value)
+  {
+    avoidBlurredMap = value;
+  }
+
+  atools::geo::Rect getViewRect() const;
+
+  bool isNoNavPaint() const
+  {
+    return noNavPaint;
+  }
+
+  /* Dummy paint cycle without any navigation stuff. Just used to initialize Marble */
+  void setNoNavPaint(bool value)
+  {
+    noNavPaint = value;
+  }
+
+  bool isPaintCopyright() const
+  {
+    return paintCopyright;
+  }
+
+  /* Paint copyright note into image */
+  void setPaintCopyright(bool value)
+  {
+    paintCopyright = value;
+  }
+
+  bool isPaintNavigation() const
+  {
+    return paintNavigation;
+  }
+
+  /* Draw navigations aids like touch regions or not */
+  void setPaintNavigation(bool newPaintNavigation)
+  {
+    paintNavigation = newPaintNavigation;
+  }
+
+  bool isPaintWindHeader() const
+  {
+    return paintWindHeader;
+  }
+
+  /* Paint wind header arrow and label */
+  void setPaintWindHeader(bool value)
+  {
+    paintWindHeader = value;
+  }
+
+  MapCache *getMapCache();
+
+  /* true if real map display widget - false if hidden for online services or other applications */
+  bool isVisibleWidget() const
+  {
+    return visibleWidget;
+  }
+
+  /* Logbook display options have changed or new or edited logbook entry */
+  void updateLogEntryScreenGeometry();
+
+  /* For debugging functions */
+  MapScreenIndex *getScreenIndex()
+  {
+    return screenIndex;
+  }
+
+  MapMarkers *getMapMarkers();
+  const MapMarkers *getMapMarkers() const;
+
+  MapPaintLayer *getMapPaintLayer()
+  {
+    return paintLayer;
+  }
+
+  /* Saved bounding box from last zoom or scroll operation. Needed to detect view changes. */
+  const Marble::GeoDataLatLonBox& getCurrentViewBoundingBox() const;
+
+  /* No drawing at all and not map interactions except moving and zooming if true.
+   * Limit depends on projection. */
+  bool noRender() const;
+
+  /* Print all layers to debug channel */
+  void dumpMapLayers() const;
+
+  const QList<map::MapRef>& getRouteDrawnNavaidsConst() const;
+
+  QList<map::MapRef> *getRouteDrawnNavaids();
+
+  const QString& getCurrentThemeId() const
+  {
+    return currentThemeId;
+  }
+
+  /* Too many objects on map */
+  bool isPaintOverflow() const;
+
+  /* Do not show anything above this zoom distance except map markers */
+  bool isDistanceCutOff() const;
+
+  /* Instances having web = true do not render additional stuff like navigation areas */
+  bool isWeb() const
+  {
+    return web;
+  }
+
+  /* Get queries bundle. This can be either GUI or Web. Locking required for Web. */
+  Queries *getQueries() const
+  {
+    return queries;
+  }
+
+  atools::geo::Pos getGeoPos(const QPoint& screenPoint) const;
+  atools::geo::Pos getGeoPos(const QPointF& screenPoint) const;
+
+  atools::geo::Pos getCenterPos() const
+  {
+    return atools::geo::Pos(centerLongitude(), centerLatitude());
+  }
+
+  /* Pos includes distance in km as altitude */
+  atools::geo::Pos getCenterPosAndDistance() const
+  {
+    return atools::geo::Pos(centerLongitude(), centerLatitude(), distance());
+  }
+
+  QPoint getScreenPoint(const atools::geo::Pos& pos);
+
+  /* Zoom out once to get a sharp map display */
+  void adjustMapDistance();
+
+signals:
+  /* Emitted whenever the result exceeds the limit clause in the queries */
+  void resultTruncated();
+
+  /* Update action state in main window (disabled/enabled) */
+  void updateActionStates();
+
+  void shownMapFeaturesChanged(map::MapTypes types);
+
+  /* Search center has changed by context menu */
+  void searchMarkChanged(const atools::geo::Pos& mark);
+
+protected:
+  /* Internal zooming and centering. Zooms one step out to get a sharper map display if allowAdjust is true */
+  void centerPosOnMap(const atools::geo::Pos& pos);
+  void setDistanceToMap(double dist, bool allowAdjust = true);
+  void centerRectOnMap(const atools::geo::Rect& rect, bool allowAdjust = true);
+  void centerRectOnMap(const Marble::GeoDataLatLonBox& rect, bool allowAdjust);
+
+  const MapScreenIndex *getScreenIndex() const
+  {
+    return screenIndex;
+  }
+
+  void showPosInternal(const atools::geo::Pos& pos, float distanceKm, bool doubleClick, bool allowAdjust);
+
+  bool loadKml(const QString& filename, bool center);
+
+  /* Set cache size from option data */
+  void updateCacheSizes();
+
+  /* Overrides for MapWidget with empty implementation that are used to update GUI elements ================ */
+  /* Show or hide overlays depending on menu state - default is all off */
+  virtual void overlayStateFromMenu();
+
+  /* Send visibility of overlays to menu items - default is no-op */
+  virtual void overlayStateToMenu() const;
+
+  /* Start jump back time - default is no-op */
+  virtual void jumpBackToAircraftStart();
+
+  /* Cancel all drag and drop operations - default is no-op */
+  virtual void cancelDragAll();
+
+  /* Remove tooltip - default is no-op */
+  virtual void hideTooltip();
+
+  /* Create history entry for new map position - default is no-op */
+  virtual void handleHistory();
+
+  /* Get sun shading from menu state - default is from internal value */
+  virtual map::MapSunShading sunShadingFromUi();
+
+  /* Get weather from menu state - default is from internal value */
+  virtual map::MapWeatherSource weatherSourceFromUi();
+
+  /* Update buttons based on current theme - default is no-op */
+  virtual void updateThemeUi(const QString&);
+
+  /* Update buttons for show/center aircraft - default is no-op */
+  virtual void updateShowAircraftUi(bool);
+
+  /* Update toolbar state for visible features - default is no-op */
+  virtual void updateMapVisibleUi() const;
+  virtual void updateMapVisibleUiPostDatabaseLoad() const;
+
+  /* Update internal values for visible map objects based on menus - default is no-op */
+  virtual void updateMapObjectsShown();
+
+  /* Check if position can be displayed and show a warning if not (near poles in Mercator, e.g.).
+   * returns true if position is ok. */
+  virtual bool checkPos(const atools::geo::Pos&);
+
+  virtual void resizeEvent(QResizeEvent *event) override;
+
+  void updateGeometryIndex(map::MapTypes oldTypes, map::MapDisplayTypes oldDisplayTypes, int oldMinRunwayLength, int oldMaxRunwayLength);
+
+  /* If width and height of a bounding rect are smaller than this: Use show point */
+  static constexpr float POS_IS_POINT_EPSILON_DEG = 0.0001f;
+  static constexpr float MIN_ZOOM_RECT_DIAMETER_KM = 0.04f;
+  static constexpr float MAX_ZOOM_RECT_DIAMETER_KM = 1000.f;
+
+  /* Caches complex X-Plane apron geometry as objects in screen coordinates for faster painting. */
+  MapCache *mapCache;
+
+  /* Keep the the overlays for the GUI widget from updating */
+  bool ignoreOverlayUpdates = false;
+
+  /* Values used to check if view has changed */
+  Marble::GeoDataLatLonBox currentViewBoundingBox;
+
+  /* Radius search center and home position */
+  atools::geo::Pos searchMarkPos, homePos;
+  double homeDistance = 0.;
+
+  /* Loaded KML file paths */
+  QStringList kmlFilePaths;
+
+  MapPaintLayer *paintLayer;
+
+  /* Do not draw while database is unavailable */
+  bool databaseLoadStatus = false;
+
+  /* Widget is shown */
+  bool active = false;
+
+  /* Zoom one step out to avoid blurred maps */
+  bool avoidBlurredMap = false;
+
+  /* true if real window/widget */
+  bool visibleWidget = false;
+
+  /* verbose logging */
+  bool verbose = false;
+
+  /* Dummy paint cycle without any navigation stuff. Just used to initialize Marble */
+  bool noNavPaint = false;
+
+  /* Paint copyright note into image */
+  bool paintCopyright = true;
+
+  /* Paint navigation marks */
+  bool paintNavigation = true;
+
+  /* Paint wind header arrow and label */
+  bool paintWindHeader = true;
+
+  /* Update screen index after painting */
+  bool screenIndexUpdateReqired = false;
+
+  /* Map theme id like "google-maps-def". */
+  QString currentThemeId;
+
+  /* Trail/track of user aircraft */
+  AircraftTrail *aircraftTrail = nullptr, *aircraftTrailLogbook = nullptr;
+
+  /* Can be GUI or web queries. Passed down to painters and MapScreenIndex. */
+  Queries *queries;
+
+private:
+  /* Set map theme and adjust properties accordingly. theme is the full path to the DGML */
+  void setThemeInternal(const MapTheme& theme);
+
+  /* Override widget events */
+  virtual void paintEvent(QPaintEvent *paintEvent) override;
+
+  void unitsUpdated();
+
+  /*  Add placemark files for offline maps */
+  void addPlacemarks();
+
+  /* Need to remove the placemark files since they are shown randomly on online maps */
+  void removePlacemarks();
+
+  /* Keeps geographical objects as index in screen coordinates */
+  MapScreenIndex *screenIndex = nullptr;
+
+  /* Current zoom value (NOT distance) */
+  int currentZoom = -1;
+
+  /* Avoids dark background when printing in night mode */
+  bool printing = false;
+
+  /* true if inside paint event - avoids crashes due to nested calls */
+  bool painting = false;
+
+  /* true if web instance */
+  bool web;
+
+  /* Last paint previousOverflow */
+  bool previousOverflow = false;
+};
+
+typedef Locker<MapPaintWidget> MapPaintWidgetLocker;
+
+#endif // LITTLENAVMAP_NAVMAPPAINTWIDGET_H

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="navmap_primary">#00639A</color>
+    <color name="navmap_secondary">#426278</color>
+    <color name="navmap_surface">#F8F9FC</color>
+</resources>

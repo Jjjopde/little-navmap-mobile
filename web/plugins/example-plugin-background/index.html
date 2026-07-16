@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>unused</title>
+  </head>
+  <body>
+    <script>
+      var pluginHost;
+      var mapDocument = null;
+      
+      
+      onmessage = event => {
+        let message = event.data.pluginParent;
+        if(message) {
+          switch(message.cause) {
+            case "cleanup":
+              return stop();
+            case "commence":
+              pluginHost = event.source;
+              return start();
+            default:
+          }
+        }
+      };
+      
+      function stop() {
+        alert("stopped");
+      }
+      
+      function start() {
+        if(mapDocument !== null) {
+          mapDocument.defaultView.alert("you should get me");
+        } else {
+          pluginHost.postMessage({"throw": "unexpected denial of map access"}, "*");
+        }
+      }
+      
+      function setMapDocument(iframeDocument, mapVersion) {
+        mapDocument = iframeDocument;
+      }
+    </script>
+  </body>
+</html>

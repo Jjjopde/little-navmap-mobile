@@ -1,0 +1,92 @@
+/*
+  main menu's menubar's container taking up a sides whole edge space
+*/
+#menubarContainer {
+
+}
+
+/*
+  main menu's menubar
+*/
+#menubarOuter {
+
+}
+
+/*
+  any menubar;
+  when wanting to modify gaps, take [data-menubarsplacement="X"]
+  from javascript_and_css/2021-a/layout-internal.css into account,
+  add selectors when necessary
+*/
+.menubar {
+
+}
+
+/*
+  any menubar's all buttons
+*/
+.menubar button {
+
+}
+
+/*
+  menu menubar's all buttons
+*/
+#menubarOuter button {
+
+}
+
+/*
+  specific buttons
+*/
+#ui-2021-a #buttonMap {
+
+}
+#ui-2021-a #buttonFlightPlan {
+
+}
+#ui-2021-a #buttonProgress {
+
+}
+#ui-2021-a #buttonAircraft {
+
+}
+#ui-2021-a #buttonAirport {
+
+}
+#ui-2021-a #buttonHelp {
+
+}
+
+/*
+  button active style, use !important for each property's value
+*/
+.active {
+  
+}
+
+/*
+  see javascript_and_css/2021-a/*-internal.css for detailed
+  cross-effects when changing following's :hover, ::before or
+  .shown::before
+*/
+#toggleOptionsToggle {
+
+}
+
+/*
+  the openable options to the menubar, see
+  javascript_and_css/2021-a/*-internal.css for existing
+  children's style
+*/
+#menubarsOptions {
+
+}
+
+
+/*
+  you are free to use more selectors, in particular combinations
+  of some of the above eg. #ui-2021-a #buttonHelp.active, and
+  also or instead toolbar.css' selectors. toolbar.css selectors
+  won't affect the toolbar inside the map but plugin's toolbars.
+*/

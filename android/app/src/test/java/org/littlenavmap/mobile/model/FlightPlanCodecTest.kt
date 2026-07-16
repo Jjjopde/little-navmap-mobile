@@ -50,10 +50,19 @@ class FlightPlanCodecTest {
             1 ZSPD 0.0 31.1430 121.8050
         """.trimIndent()
 
-        assertEquals(
-            FlightPlan(origin = "ZBAA", destination = "ZSPD", waypoints = listOf("GITUM")),
-            FlightPlanCodec.decodeImported(fms),
-        )
+        val plan = FlightPlanCodec.decodeImported(fms)
+
+        assertEquals("ZBAA", plan.origin)
+        assertEquals("ZSPD", plan.destination)
+        assertEquals(listOf("GITUM"), plan.waypoints)
+        assertEquals("2607", plan.airacCycle)
+        assertEquals(3, plan.navigationPoints.size)
+        assertEquals(40.08, plan.navigationPoints.first().latitude, 0.0001)
+        val exported = FlightPlanCodec.decodeImported(FlightPlanCodec.xPlaneFms(plan))
+        assertEquals(plan.origin, exported.origin)
+        assertEquals(plan.destination, exported.destination)
+        assertEquals(plan.waypoints, exported.waypoints)
+        assertEquals(plan.navigationPoints, exported.navigationPoints)
     }
 
     @Test
@@ -61,13 +70,18 @@ class FlightPlanCodecTest {
         val plan = """
             <?xml version="1.0" encoding="UTF-8"?>
             <LittleNavmap><Flightplan><Header><CruisingAlt>12000</CruisingAlt></Header>
-            <Waypoints><Waypoint><Ident>EGHJ</Ident></Waypoint><Waypoint><Ident>SAM</Ident></Waypoint>
-            <Waypoint><Ident>EGPC</Ident></Waypoint></Waypoints></Flightplan></LittleNavmap>
+            <Waypoints><Waypoint><Ident>EGHJ</Ident><Pos Lat="50.6798" Lon="-1.1094" Alt="28"/></Waypoint>
+            <Waypoint><Ident>SAM</Ident><Pos Lat="50.9552" Lon="-1.3450" Alt="5694"/></Waypoint>
+            <Waypoint><Ident>EGPC</Ident><Pos Lat="58.4589" Lon="-3.0930" Alt="126"/></Waypoint></Waypoints></Flightplan></LittleNavmap>
         """.trimIndent()
 
-        assertEquals(
-            FlightPlan(origin = "EGHJ", destination = "EGPC", cruiseLevel = "12000", waypoints = listOf("SAM")),
-            FlightPlanCodec.decodeImported(plan),
-        )
+        val imported = FlightPlanCodec.decodeImported(plan)
+
+        assertEquals("EGHJ", imported.origin)
+        assertEquals("EGPC", imported.destination)
+        assertEquals("12000", imported.cruiseLevel)
+        assertEquals(listOf("SAM"), imported.waypoints)
+        assertEquals(3, imported.navigationPoints.size)
+        assertEquals(-3.093, imported.navigationPoints.last().longitude, 0.0001)
     }
 }

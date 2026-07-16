@@ -8,10 +8,25 @@ package org.littlenavmap.mobile.model
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.StringReader
+import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
 import org.xml.sax.InputSource
 
-/** A portable, local-first flight plan. Coordinates are resolved from navigation data later. */
+@Serializable
+data class NavigationPoint(
+    val identifier: String,
+    val latitude: Double,
+    val longitude: Double,
+    val altitudeFeet: Int = 0,
+    val xPlaneType: Int = XPLANE_FIX_TYPE,
+) {
+    companion object {
+        const val XPLANE_AIRPORT_TYPE = 1
+        const val XPLANE_FIX_TYPE = 11
+    }
+}
+
+/** A portable, local-first flight plan with optional resolved navigation coordinates. */
 @Serializable
 data class FlightPlan(
     val origin: String = "",
@@ -22,6 +37,8 @@ data class FlightPlan(
     val arrivalProcedure: String = "",
     val approach: String = "",
     val waypoints: List<String> = emptyList(),
+    val navigationPoints: List<NavigationPoint> = emptyList(),
+    val airacCycle: String = "",
 )
 
 object FlightPlanCodec {
@@ -54,6 +71,38 @@ object FlightPlanCodec {
         if (plan.waypoints.isNotEmpty()) appendLine("ROUTE ${plan.waypoints.joinToString(" ")}")
         if (plan.arrivalProcedure.isNotBlank()) appendLine("STAR ${plan.arrivalProcedure}")
         if (plan.approach.isNotBlank()) appendLine("APP ${plan.approach}")
+    }
+
+    fun canExportXPlaneFms(plan: FlightPlan): Boolean = resolvedPoints(plan) != null
+
+    fun xPlaneFms(plan: FlightPlan): String {
+        val points = requireNotNull(resolvedPoints(plan)) {
+            "X-Plane export needs coordinates for every airport and waypoint. Import an LNM/FMS plan or resolve the route in Little Navmap first."
+        }
+        return buildString {
+            appendLine("I")
+            appendLine("1100 Version")
+            plan.airacCycle.takeIf(String::isNotBlank)?.let { appendLine("CYCLE $it") }
+            appendLine("ADEP ${plan.origin}")
+            appendLine("ADES ${plan.destination}")
+            appendLine("NUMENR ${points.size}")
+            points.forEachIndexed { index, point ->
+                val type = when (index) {
+                    0, points.lastIndex -> NavigationPoint.XPLANE_AIRPORT_TYPE
+                    else -> point.xPlaneType
+                }
+                appendLine(
+                    "%d %s %d %.6f %.6f".format(
+                        Locale.US,
+                        type,
+                        point.identifier,
+                        point.altitudeFeet,
+                        point.latitude,
+                        point.longitude,
+                    ),
+                )
+            }
+        }
     }
 
     fun decodeRouteText(content: String): FlightPlan {
@@ -91,15 +140,25 @@ object FlightPlanCodec {
                     parts[3].toDoubleOrNull() != null &&
                     parts[4].toDoubleOrNull() != null
             }?.let { type ->
-                parts.getOrNull(1)?.takeIf { it.isNotBlank() }?.let { ident -> type to ident }
+                parts.getOrNull(1)?.takeIf { it.isNotBlank() }?.let { ident ->
+                    NavigationPoint(
+                        identifier = ident,
+                        altitudeFeet = parts[2].toDouble().toInt(),
+                        latitude = parts[3].toDouble(),
+                        longitude = parts[4].toDouble(),
+                        xPlaneType = type,
+                    )
+                }
             }
         }
-        val identifiers = waypointEntries.map { it.second }
+        val identifiers = waypointEntries.map(NavigationPoint::identifier)
         require(identifiers.size >= 2) { "The X-Plane FMS file has no usable route." }
         return FlightPlan(
             origin = header["ADEP"].orEmpty().ifBlank { identifiers.first() },
             destination = header["ADES"].orEmpty().ifBlank { identifiers.last() },
             waypoints = identifiers.drop(1).dropLast(1),
+            navigationPoints = waypointEntries,
+            airacCycle = header["CYCLE"].orEmpty(),
         )
     }
 
@@ -113,20 +172,13 @@ object FlightPlanCodec {
         }
         val document = factory.newDocumentBuilder().parse(InputSource(StringReader(content)))
         val nodes = document.getElementsByTagName("Waypoint")
-        val identifiers = buildList {
+        val navigationPoints = buildList {
             for (index in 0 until nodes.length) {
                 val waypoint = nodes.item(index)
-                val ident = waypoint.childNodes
-                    .let { children ->
-                        (0 until children.length)
-                            .map { children.item(it) }
-                            .firstOrNull { it.nodeName == "Ident" }
-                            ?.textContent
-                            ?.trim()
-                    }
-                if (!ident.isNullOrBlank()) add(ident)
+                waypoint.asNavigationPoint()?.let(::add)
             }
         }
+        val identifiers = navigationPoints.map(NavigationPoint::identifier)
         require(identifiers.size >= 2) { "The Little Navmap plan has no usable route." }
         return FlightPlan(
             origin = identifiers.first(),
@@ -136,6 +188,7 @@ object FlightPlanCodec {
             departureProcedure = document.procedureName("Sid"),
             arrivalProcedure = document.procedureName("Star"),
             waypoints = identifiers.drop(1).dropLast(1),
+            navigationPoints = navigationPoints,
         )
     }
 
@@ -151,6 +204,35 @@ object FlightPlanCodec {
             ?.textContent
             ?.trim()
             .orEmpty()
+    }
+
+    private fun org.w3c.dom.Node.asNavigationPoint(): NavigationPoint? {
+        val children = childNodes
+        fun child(name: String): org.w3c.dom.Node? =
+            (0 until children.length).map { children.item(it) }.firstOrNull { it.nodeName == name }
+        val identifier = child("Ident")?.textContent?.trim().orEmpty()
+        val position = child("Pos") as? org.w3c.dom.Element ?: return null
+        val latitude = position.getAttribute("Lat").toDoubleOrNull() ?: return null
+        val longitude = position.getAttribute("Lon").toDoubleOrNull() ?: return null
+        return identifier.takeIf(String::isNotBlank)?.let {
+            NavigationPoint(
+                identifier = it,
+                latitude = latitude,
+                longitude = longitude,
+                altitudeFeet = position.getAttribute("Alt").toDoubleOrNull()?.toInt() ?: 0,
+            )
+        }
+    }
+
+    private fun resolvedPoints(plan: FlightPlan): List<NavigationPoint>? {
+        val identifiers = listOf(plan.origin) + plan.waypoints + plan.destination
+        if (identifiers.any(String::isBlank)) return null
+        val pointsByIdentifier = plan.navigationPoints.associateBy {
+            it.identifier.trim().uppercase(Locale.ROOT)
+        }
+        return identifiers.map { identifier ->
+            pointsByIdentifier[identifier.trim().uppercase(Locale.ROOT)] ?: return null
+        }
     }
 
     private const val FMS_WAYPOINT_FIELD_COUNT = 5

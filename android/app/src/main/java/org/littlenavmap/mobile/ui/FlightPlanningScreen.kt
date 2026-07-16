@@ -68,6 +68,12 @@ private enum class ProcedureField(val title: String) {
     Approach("Approach"),
 }
 
+private enum class ExportFormat(val fileName: String) {
+    Json("flight-plan.json"),
+    RouteText("flight-plan.route.txt"),
+    XPlaneFms("flight-plan.fms"),
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun FlightPlanningScreen(
@@ -82,7 +88,8 @@ internal fun FlightPlanningScreen(
     var destination by remember { mutableStateOf(PlannerDestination.Plan) }
     var waypointInput by remember { mutableStateOf("") }
     var procedurePicker by remember { mutableStateOf<ProcedureField?>(null) }
-    var exportJson by remember { mutableStateOf(true) }
+    var exportFormat by remember { mutableStateOf(ExportFormat.Json) }
+    var fileMessage by remember { mutableStateOf<String?>(null) }
     var weatherStation by remember { mutableStateOf("ZBAA") }
     var weatherText by remember { mutableStateOf<String?>(null) }
     var weatherError by remember { mutableStateOf<String?>(null) }
@@ -99,17 +106,24 @@ internal fun FlightPlanningScreen(
         }.onSuccess { imported ->
             onPlanChange(imported)
             destination = PlannerDestination.Plan
+            fileMessage = "Imported ${imported.waypoints.size + 2} route points."
         }.onFailure { error ->
-            navDataMessage = "Flight-plan import failed: ${error.message ?: "unsupported file"}"
+            fileMessage = "Import failed: ${error.message ?: "unsupported file"}"
         }
     }
-    val exportPlan = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+    val exportPlan = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         runCatching {
-            val content = if (exportJson) FlightPlanCodec.encode(plan) else FlightPlanCodec.routeText(plan)
+            val content = when (exportFormat) {
+                ExportFormat.Json -> FlightPlanCodec.encode(plan)
+                ExportFormat.RouteText -> FlightPlanCodec.routeText(plan)
+                ExportFormat.XPlaneFms -> FlightPlanCodec.xPlaneFms(plan)
+            }
             context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
                 ?: error("The selected location could not be written.")
-        }.onFailure { error -> navDataMessage = "Flight-plan export failed: ${error.message ?: "unknown error"}" }
+        }.onSuccess {
+            fileMessage = "${exportFormat.name} file saved."
+        }.onFailure { error -> fileMessage = "Export failed: ${error.message ?: "unknown error"}" }
     }
 
     Scaffold(
@@ -170,10 +184,12 @@ internal fun FlightPlanningScreen(
                 onRemoveWaypoint = { waypoint -> onPlanChange(plan.copy(waypoints = plan.waypoints - waypoint)) },
                 onProcedureClick = { procedurePicker = it },
                 onImport = { importPlan.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
-                onExport = { json ->
-                    exportJson = json
-                    exportPlan.launch(if (json) "flight-plan.json" else "flight-plan.route.txt")
+                onExport = { format ->
+                    exportFormat = format
+                    exportPlan.launch(format.fileName)
                 },
+                canExportXPlaneFms = FlightPlanCodec.canExportXPlaneFms(plan),
+                fileMessage = fileMessage,
                 modifier = Modifier.padding(padding),
             )
             PlannerDestination.Weather -> WeatherPanel(
@@ -195,6 +211,7 @@ internal fun FlightPlanningScreen(
                 modifier = Modifier.padding(padding),
             )
             PlannerDestination.Data -> NavigationDataPanel(
+                plan = plan,
                 message = navDataMessage,
                 isConnected = isConnected,
                 onConnect = onConnect,
@@ -274,7 +291,9 @@ private fun FlightPlanEditor(
     onRemoveWaypoint: (String) -> Unit,
     onProcedureClick: (ProcedureField) -> Unit,
     onImport: () -> Unit,
-    onExport: (Boolean) -> Unit,
+    onExport: (ExportFormat) -> Unit,
+    canExportXPlaneFms: Boolean,
+    fileMessage: String?,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -324,10 +343,28 @@ private fun FlightPlanEditor(
         Text("Files", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) { Text("Import") }
-            Button(onClick = { onExport(true) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) { Text("Export JSON") }
+            Button(onClick = { onExport(ExportFormat.Json) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) { Text("Export JSON") }
         }
-        OutlinedButton(onClick = { onExport(false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) {
+        OutlinedButton(onClick = { onExport(ExportFormat.RouteText) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) {
             Text("Export route text")
+        }
+        OutlinedButton(
+            onClick = { onExport(ExportFormat.XPlaneFms) },
+            enabled = canExportXPlaneFms,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            shape = RoundedCornerShape(6.dp),
+        ) { Text("Export X-Plane FMS") }
+        if (!canExportXPlaneFms) {
+            Text(
+                "X-Plane export needs a route with resolved coordinates.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        fileMessage?.let { message ->
+            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth()) {
+                Text(message, modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         Spacer(Modifier.height(12.dp))
     }
@@ -383,6 +420,7 @@ private fun WeatherPanel(
 
 @Composable
 private fun NavigationDataPanel(
+    plan: FlightPlan,
     message: String,
     isConnected: Boolean,
     onConnect: () -> Unit,
@@ -393,11 +431,22 @@ private fun NavigationDataPanel(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("Navigation data", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("AIRAC 2607", style = MaterialTheme.typography.titleLarge)
+        Text(
+            plan.airacCycle.takeIf(String::isNotBlank)?.let { "AIRAC $it" } ?: "AIRAC cycle unavailable",
+            style = MaterialTheme.typography.titleLarge,
+        )
         Text("Procedures and coordinates are resolved by the Little Navmap desktop data library. Keep that library current before flying.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth()) {
             Text(message, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Text(
+            if (FlightPlanCodec.canExportXPlaneFms(plan)) {
+                "Every route point has coordinates. X-Plane FMS export is available."
+            } else {
+                "This route still has unresolved coordinates. Import an LNM/FMS plan or resolve it in Little Navmap before exporting to X-Plane."
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (!isConnected) {
             Button(onClick = onConnect, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) {
                 Text("Connect Little Navmap")

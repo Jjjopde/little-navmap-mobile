@@ -44,9 +44,10 @@ desktop instance. Its native planner supports departure, destination,
 alternate, cruise level, SID, STAR, approach, and an editable enroute sequence.
 Plans can be imported from Little Navmap `.lnmpln`, X-Plane 11/12 `.fms`
 (v1100), the documented Little Navmap Mobile JSON format, or readable ICAO
-route text. They can be exported as Little Navmap Mobile JSON or readable ICAO
-route text. Weather uses the public Aviation Weather METAR service when the
-device has Internet access.
+route text. They can be exported as Little Navmap Mobile JSON, readable ICAO
+route text, or an X-Plane 11/12 `.fms` (v1100) file when every route point has
+validated coordinates. Weather uses the public Aviation Weather METAR service
+when the device has Internet access.
 
 Simulator live data, the map, airport information, and desktop navigation-data
 resolution remain available through the Little Navmap Web API. Connect the
@@ -54,10 +55,9 @@ desktop instance that is itself connected to X-Plane 12, MSFS, or Prepar3D.
 The Navigation data page deliberately directs updates to the desktop database:
 the mobile app does not claim to install a proprietary AIRAC dataset locally.
 
-This release does not export X-Plane `.fms` or native Little Navmap `.lnmpln`
-files. Both formats need validated waypoint coordinates and procedure data;
-generating them without a licensed, current navigation database would create
-unsafe or misleading routes.
+This release does not export native Little Navmap `.lnmpln` files. X-Plane FMS
+export remains disabled for routes with unresolved coordinates, which prevents
+the app from generating unsafe or misleading simulator routes.
 
 The Aircraft page is native Compose UI backed by the stable `/api/sim/info`
 endpoint and polls only while that page and the app are in the foreground. It

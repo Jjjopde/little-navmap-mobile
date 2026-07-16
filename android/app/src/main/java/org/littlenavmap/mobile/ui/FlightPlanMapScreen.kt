@@ -6,6 +6,7 @@
 package org.littlenavmap.mobile.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,24 +25,28 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import org.littlenavmap.mobile.model.FlightPlan
 import org.littlenavmap.mobile.model.NavigationPoint
 import org.littlenavmap.mobile.model.ServerProfile
-import kotlin.math.max
-import kotlin.math.min
 
 /** A local, lightweight route display. It deliberately avoids a WebView or network map engine. */
 @Composable
@@ -117,7 +122,8 @@ private fun NativeRouteMap(
     onResolveWithLittleNavmap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var zoom by remember { mutableFloatStateOf(1f) }
+    var viewport by remember { mutableStateOf(MapViewport()) }
+    var mapSize by remember { mutableStateOf(IntSize.Zero) }
     var enabledLayers by remember { mutableStateOf(setOf("ROUTE", "AIRSPACE")) }
     val points = remember(plan.navigationPoints) { plan.navigationPoints.distinctBy { it.identifier to it.latitude to it.longitude } }
     val plannedPointCount = listOf(plan.origin, plan.destination).count(String::isNotBlank) + plan.waypoints.size
@@ -164,17 +170,21 @@ private fun NativeRouteMap(
             Box(Modifier.fillMaxSize()) {
                 RouteCanvas(
                     points = points,
-                    zoom = zoom,
+                    viewport = viewport,
+                    onViewportChange = { viewport = it },
                     showRoute = "ROUTE" in enabledLayers,
                     showAirspace = "AIRSPACE" in enabledLayers,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().onSizeChanged { mapSize = it },
                 )
                 Column(
                     modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    MapControl("+") { zoom = min(MAX_ZOOM, zoom + ZOOM_STEP) }
-                    MapControl("-") { zoom = max(MIN_ZOOM, zoom - ZOOM_STEP) }
+                    MapControl("+") { viewport = viewport.zoomedBy(ZOOM_BUTTON_FACTOR) }
+                    MapControl("-") { viewport = viewport.zoomedBy(1f / ZOOM_BUTTON_FACTOR) }
+                    MapControl("FIT") {
+                        viewport = fitMapViewport(points, mapSize.width.toFloat(), mapSize.height.toFloat())
+                    }
                 }
                 Text(
                     text = if (points.size >= 2) localized("VECTOR ROUTE", "矢量航路") else localized("RESOLVE ROUTE POINTS TO DRAW", "请解析航路点以绘制航图"),
@@ -238,7 +248,11 @@ private fun MapLayerChip(label: String, selected: Boolean, onClick: () -> Unit) 
 private fun MapControl(symbol: String, onClick: () -> Unit) {
     Surface(color = Color(0xFF1D2B3B), shape = RoundedCornerShape(6.dp)) {
         IconButton(onClick = onClick, modifier = Modifier.size(44.dp)) {
-            Text(symbol, color = Color.White, style = MaterialTheme.typography.titleLarge)
+            Text(
+                symbol,
+                color = Color.White,
+                style = if (symbol == "FIT") MaterialTheme.typography.labelSmall else MaterialTheme.typography.titleLarge,
+            )
         }
     }
 }
@@ -246,46 +260,70 @@ private fun MapControl(symbol: String, onClick: () -> Unit) {
 @Composable
 private fun RouteCanvas(
     points: List<NavigationPoint>,
-    zoom: Float,
+    viewport: MapViewport,
+    onViewportChange: (MapViewport) -> Unit,
     showRoute: Boolean,
     showAirspace: Boolean,
     modifier: Modifier,
 ) {
-    Canvas(modifier = modifier) {
+    val context = LocalContext.current
+    val landPolygons = remember(context) { WorldLand.load(context) }
+    val currentViewport by rememberUpdatedState(viewport)
+    Canvas(
+        modifier = modifier.pointerInput(Unit) {
+            detectTransformGestures { _, pan, gestureZoom, _ ->
+                val pixelsPerDegree = basePixelsPerDegree(size.width.toFloat(), size.height.toFloat()) * currentViewport.zoom
+                onViewportChange(currentViewport.pannedBy(pan.x, pan.y, pixelsPerDegree).zoomedBy(gestureZoom))
+            }
+        },
+    ) {
         val gridColor = Color(0xFF395064)
+        val landColor = Color(0xFF273D4D)
+        val coastColor = Color(0xFF5B7789)
         val routeColor = Color(0xFF71D9FF)
-        val margin = 36.dp.toPx()
-        val columns = 6
-        val rows = 8
+        val pixelsPerDegree = basePixelsPerDegree(size.width, size.height) * viewport.zoom
+        val center = Offset(size.width / 2f, size.height / 2f)
+        fun position(latitude: Double, longitude: Double): Offset = Offset(
+            x = center.x + longitudeDelta(longitude, viewport.centerLongitude) * pixelsPerDegree,
+            y = center.y - (latitude.toFloat() - viewport.centerLatitude) * pixelsPerDegree,
+        )
         if (showAirspace) {
-            repeat(columns + 1) { index ->
-                val x = size.width * index / columns
+            val latitudeStart = ((viewport.centerLatitude - center.y / pixelsPerDegree) / GRID_DEGREES).toInt() * GRID_DEGREES
+            val latitudeEnd = ((viewport.centerLatitude + center.y / pixelsPerDegree) / GRID_DEGREES).toInt() * GRID_DEGREES
+            for (latitude in latitudeStart..latitudeEnd step GRID_DEGREES) {
+                if (latitude in -80..80) {
+                    val y = position(latitude.toDouble(), viewport.centerLongitude.toDouble()).y
+                    drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+                }
+            }
+            val longitudeStart = ((viewport.centerLongitude - center.x / pixelsPerDegree) / GRID_DEGREES).toInt() * GRID_DEGREES
+            val longitudeEnd = ((viewport.centerLongitude + center.x / pixelsPerDegree) / GRID_DEGREES).toInt() * GRID_DEGREES
+            for (longitude in longitudeStart..longitudeEnd step GRID_DEGREES) {
+                val x = position(viewport.centerLatitude.toDouble(), longitude.toDouble()).x
                 drawLine(gridColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
             }
-            repeat(rows + 1) { index ->
-                val y = size.height * index / rows
-                drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+        }
+        landPolygons.forEach { polygon ->
+            val path = Path()
+            var crossesDateLine = false
+            polygon.rings.forEach { ring ->
+                ring.forEachIndexed { index, coordinate ->
+                    val previous = ring.getOrNull(index - 1)
+                    val projected = position(coordinate.latitude, coordinate.longitude)
+                    if (index == 0 || (previous != null && kotlin.math.abs(coordinate.longitude - previous.longitude) > 180.0)) {
+                        if (previous != null) crossesDateLine = true
+                        path.moveTo(projected.x, projected.y)
+                    } else {
+                        path.lineTo(projected.x, projected.y)
+                    }
+                }
+                if (!crossesDateLine) path.close()
             }
+            if (!crossesDateLine) drawPath(path, color = landColor, style = Fill)
+            drawPath(path, color = coastColor, style = Stroke(width = 1.dp.toPx()))
         }
         if (points.size < 2 || !showRoute) return@Canvas
-        val minLatitude = points.minOf(NavigationPoint::latitude)
-        val maxLatitude = points.maxOf(NavigationPoint::latitude)
-        val minLongitude = points.minOf(NavigationPoint::longitude)
-        val maxLongitude = points.maxOf(NavigationPoint::longitude)
-        val latitudeRange = max(maxLatitude - minLatitude, MIN_COORDINATE_RANGE)
-        val longitudeRange = max(maxLongitude - minLongitude, MIN_COORDINATE_RANGE)
-        val usableWidth = max(size.width - margin * 2, 1f)
-        val usableHeight = max(size.height - margin * 2, 1f)
-        val center = Offset(size.width / 2, size.height / 2)
-        fun position(point: NavigationPoint): Offset {
-            val x = margin + ((point.longitude - minLongitude) / longitudeRange).toFloat() * usableWidth
-            val y = size.height - margin - ((point.latitude - minLatitude) / latitudeRange).toFloat() * usableHeight
-            return Offset(
-                x = center.x + (x - center.x) * zoom,
-                y = center.y + (y - center.y) * zoom,
-            )
-        }
-        val coordinates = points.map(::position)
+        val coordinates = points.map { point -> position(point.latitude, point.longitude) }
         coordinates.zipWithNext().forEach { (from, to) ->
             drawLine(routeColor, from, to, strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
         }
@@ -296,10 +334,8 @@ private fun RouteCanvas(
     }
 }
 
-private const val MIN_COORDINATE_RANGE = 0.25
-private const val MIN_ZOOM = 0.7f
-private const val MAX_ZOOM = 2.4f
-private const val ZOOM_STEP = 0.2f
+private const val GRID_DEGREES = 30
+private const val ZOOM_BUTTON_FACTOR = 1.35f
 
 private fun Set<String>.toggle(value: String): Set<String> =
     if (value in this) this - value else this + value

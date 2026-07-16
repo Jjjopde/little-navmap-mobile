@@ -22,9 +22,19 @@ import org.littlenavmap.mobile.data.PreferencesRepository
 import org.littlenavmap.mobile.model.FlightPlan
 import org.littlenavmap.mobile.model.NavigationDataPackage
 import org.littlenavmap.mobile.model.ServerProfile
+import org.littlenavmap.mobile.model.XPlaneEndpoint
+import org.littlenavmap.mobile.model.XPlaneSnapshot
 import org.littlenavmap.mobile.network.ServerProbe
+import org.littlenavmap.mobile.network.XPlaneRrefClient
 
 internal enum class ConnectionPhase {
+    Idle,
+    Connecting,
+    Connected,
+    Error,
+}
+
+internal enum class XPlanePhase {
     Idle,
     Connecting,
     Connected,
@@ -41,11 +51,22 @@ internal data class LittleNavmapUiState(
     val keepScreenOn: Boolean = true,
 )
 
+internal data class XPlaneUiState(
+    val host: String = "",
+    val port: String = XPlaneEndpoint.DEFAULT_PORT.toString(),
+    val phase: XPlanePhase = XPlanePhase.Idle,
+    val endpoint: XPlaneEndpoint? = null,
+    val snapshot: XPlaneSnapshot? = null,
+    val errorMessage: String? = null,
+)
+
 class LittleNavmapViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = PreferencesRepository(application)
     private val navigationDataRepository = NavigationDataRepository(application)
     private val serverProbe = ServerProbe()
+    private val xPlaneClient = XPlaneRrefClient()
     private var probeJob: Job? = null
+    private var xPlaneJob: Job? = null
 
     internal var uiState by mutableStateOf(
         LittleNavmapUiState(keepScreenOn = preferences.keepScreenOn()),
@@ -56,6 +77,13 @@ class LittleNavmapViewModel(application: Application) : AndroidViewModel(applica
         private set
 
     internal var navigationData by mutableStateOf(navigationDataRepository.load())
+        private set
+
+    internal var xPlaneUiState by mutableStateOf(
+        preferences.loadXPlaneEndpoint()?.let { endpoint ->
+            XPlaneUiState(host = endpoint.host, port = endpoint.port.toString())
+        } ?: XPlaneUiState(),
+    )
         private set
 
     init {
@@ -142,6 +170,81 @@ class LittleNavmapViewModel(application: Application) : AndroidViewModel(applica
         data
     }
 
+    internal fun updateXPlaneHost(host: String) {
+        if (xPlaneUiState.phase == XPlanePhase.Connecting) return
+        xPlaneUiState = xPlaneUiState.copy(
+            host = host,
+            phase = xPlaneUiState.phase.afterEdit(),
+            endpoint = null,
+            errorMessage = null,
+        )
+    }
+
+    internal fun updateXPlanePort(port: String) {
+        if (xPlaneUiState.phase == XPlanePhase.Connecting) return
+        xPlaneUiState = xPlaneUiState.copy(
+            port = port.filter(Char::isDigit).take(MAX_PORT_LENGTH),
+            phase = xPlaneUiState.phase.afterEdit(),
+            endpoint = null,
+            errorMessage = null,
+        )
+    }
+
+    internal fun connectXPlane() {
+        XPlaneEndpoint.parse(xPlaneUiState.host, xPlaneUiState.port).fold(
+            onSuccess = ::readXPlane,
+            onFailure = { error ->
+                xPlaneUiState = xPlaneUiState.copy(
+                    phase = XPlanePhase.Error,
+                    endpoint = null,
+                    errorMessage = error.message ?: "Enter a valid X-Plane address and UDP port.",
+                )
+            },
+        )
+    }
+
+    internal fun refreshXPlane() {
+        xPlaneUiState.endpoint?.let(::readXPlane) ?: connectXPlane()
+    }
+
+    private fun readXPlane(endpoint: XPlaneEndpoint) {
+        xPlaneJob?.cancel()
+        xPlaneUiState = xPlaneUiState.copy(
+            host = endpoint.host,
+            port = endpoint.port.toString(),
+            phase = XPlanePhase.Connecting,
+            endpoint = endpoint,
+            errorMessage = null,
+        )
+        xPlaneJob = viewModelScope.launch {
+            val result = try {
+                Result.success(xPlaneClient.read(endpoint.host, endpoint.port))
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Result.failure(exception)
+            }
+            result.fold(
+                onSuccess = { snapshot ->
+                    preferences.saveXPlaneEndpoint(endpoint)
+                    xPlaneUiState = xPlaneUiState.copy(
+                        phase = XPlanePhase.Connected,
+                        endpoint = endpoint,
+                        snapshot = snapshot,
+                        errorMessage = null,
+                    )
+                },
+                onFailure = { error ->
+                    xPlaneUiState = xPlaneUiState.copy(
+                        phase = XPlanePhase.Error,
+                        endpoint = endpoint,
+                        errorMessage = error.message ?: "Unable to read X-Plane UDP data.",
+                    )
+                },
+            )
+        }
+    }
+
     private fun probe(profile: ServerProfile) {
         probeJob?.cancel()
         uiState = uiState.copy(
@@ -186,6 +289,9 @@ class LittleNavmapViewModel(application: Application) : AndroidViewModel(applica
 
     private fun ConnectionPhase.formPhaseAfterEdit(): ConnectionPhase =
         if (this == ConnectionPhase.Error) ConnectionPhase.Idle else this
+
+    private fun XPlanePhase.afterEdit(): XPlanePhase =
+        if (this == XPlanePhase.Error || this == XPlanePhase.Connected) XPlanePhase.Idle else this
 
     private companion object {
         const val MAX_PORT_LENGTH = 5

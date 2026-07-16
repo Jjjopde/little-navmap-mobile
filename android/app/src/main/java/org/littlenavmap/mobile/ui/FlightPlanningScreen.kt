@@ -64,6 +64,7 @@ import org.littlenavmap.mobile.network.AviationWeatherClient
 private enum class PlannerDestination(val title: String, val icon: Int) {
     Plan("Plan", R.drawable.ic_route),
     Weather("Weather", R.drawable.ic_progress),
+    Simulator("Simulator", R.drawable.ic_plane),
     Data("Data", R.drawable.ic_airport),
 }
 
@@ -86,6 +87,11 @@ internal fun FlightPlanningScreen(
     onPlanChange: (FlightPlan) -> Unit,
     navigationData: NavigationDataPackage?,
     onImportNavigationData: (String) -> Result<NavigationDataPackage>,
+    xPlaneState: XPlaneUiState,
+    onXPlaneHostChange: (String) -> Unit,
+    onXPlanePortChange: (String) -> Unit,
+    onXPlaneConnect: () -> Unit,
+    onXPlaneRefresh: () -> Unit,
     isConnected: Boolean,
     onConnect: () -> Unit,
     onOpenLiveMap: () -> Unit,
@@ -237,6 +243,14 @@ internal fun FlightPlanningScreen(
                         isWeatherLoading = false
                     }
                 },
+                modifier = Modifier.padding(padding),
+            )
+            PlannerDestination.Simulator -> XPlaneDirectScreen(
+                state = xPlaneState,
+                onHostChange = onXPlaneHostChange,
+                onPortChange = onXPlanePortChange,
+                onConnect = onXPlaneConnect,
+                onRefresh = onXPlaneRefresh,
                 modifier = Modifier.padding(padding),
             )
             PlannerDestination.Data -> NavigationDataPanel(

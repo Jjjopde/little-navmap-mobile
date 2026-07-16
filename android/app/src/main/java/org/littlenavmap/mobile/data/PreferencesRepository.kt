@@ -13,6 +13,7 @@ import androidx.core.content.edit
 import org.littlenavmap.mobile.model.FlightPlan
 import org.littlenavmap.mobile.model.FlightPlanCodec
 import org.littlenavmap.mobile.model.ServerProfile
+import org.littlenavmap.mobile.model.XPlaneEndpoint
 
 /** Persists connection settings without retaining credentials or response data. */
 class PreferencesRepository(context: Context) {
@@ -69,6 +70,25 @@ class PreferencesRepository(context: Context) {
         preferences.edit { putBoolean(KEY_KEEP_SCREEN_ON, enabled) }
     }
 
+    fun loadXPlaneEndpoint(): XPlaneEndpoint? = try {
+        val host = preferences.getString(KEY_XPLANE_HOST, null)?.takeIf { it.isNotBlank() } ?: return null
+        XPlaneEndpoint(
+            host = host,
+            port = preferences.getInt(KEY_XPLANE_PORT, XPlaneEndpoint.DEFAULT_PORT),
+        ).takeIf { it.validate() == null }
+    } catch (_: ClassCastException) {
+        null
+    }
+
+    fun saveXPlaneEndpoint(endpoint: XPlaneEndpoint) {
+        val validationError = endpoint.validate()
+        require(validationError == null) { validationError.orEmpty() }
+        preferences.edit {
+            putString(KEY_XPLANE_HOST, endpoint.host)
+            putInt(KEY_XPLANE_PORT, endpoint.port)
+        }
+    }
+
     fun loadFlightPlan(): FlightPlan = runCatching {
         val content = preferences.getString(KEY_FLIGHT_PLAN, null) ?: return FlightPlan()
         FlightPlanCodec.decode(content)
@@ -85,5 +105,7 @@ class PreferencesRepository(context: Context) {
         const val KEY_PORT = "server_port"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_FLIGHT_PLAN = "flight_plan"
+        const val KEY_XPLANE_HOST = "xplane_host"
+        const val KEY_XPLANE_PORT = "xplane_port"
     }
 }

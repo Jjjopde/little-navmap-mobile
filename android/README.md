@@ -52,6 +52,10 @@ when the device has Internet access.
 Simulator live data, the map, airport information, and desktop navigation-data
 resolution remain available through the Little Navmap Web API. Connect the
 desktop instance that is itself connected to X-Plane 12, MSFS, or Prepar3D.
+For a direct X-Plane 11/12 link, use the Simulator tab, enter the simulator's
+LAN address and UDP port (normally 49000), and enable UDP DataRef access in
+X-Plane. The direct link reads aircraft position, speed, heading, vertical
+speed, and wind through the RREF protocol.
 The Navigation data page accepts a portable Navmap Mobile navigation-data JSON
 package and stores it locally. It does not claim to download a proprietary
 AIRAC dataset. Keep the desktop Little Navmap database current as well when

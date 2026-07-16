@@ -52,8 +52,39 @@ when the device has Internet access.
 Simulator live data, the map, airport information, and desktop navigation-data
 resolution remain available through the Little Navmap Web API. Connect the
 desktop instance that is itself connected to X-Plane 12, MSFS, or Prepar3D.
-The Navigation data page deliberately directs updates to the desktop database:
-the mobile app does not claim to install a proprietary AIRAC dataset locally.
+The Navigation data page accepts a portable Navmap Mobile navigation-data JSON
+package and stores it locally. It does not claim to download a proprietary
+AIRAC dataset. Keep the desktop Little Navmap database current as well when
+using connected planning. A minimal test package is available at
+[`dev/navigation-data-example.json`](dev/navigation-data-example.json).
+
+The package has this shape:
+
+```json
+{
+  "cycle": "2607",
+  "airports": [{
+    "identifier": "ZBAA",
+    "latitude": 40.0801,
+    "longitude": 116.5846,
+    "elevationFeet": 116,
+    "sids": ["DAXING 1A"],
+    "stars": [],
+    "approaches": []
+  }],
+  "fixes": [{
+    "identifier": "GITUM",
+    "latitude": 39.0,
+    "longitude": 117.0,
+    "altitudeFeet": 34000,
+    "xPlaneType": 11
+  }]
+}
+```
+
+Airport and fix identifiers are resolved case-insensitively. Once the package
+contains every point in a plan, the X-Plane FMS export is enabled and the SID,
+STAR, and approach selector lists are populated from the relevant airport.
 
 This release does not export native Little Navmap `.lnmpln` files. X-Plane FMS
 export remains disabled for routes with unresolved coordinates, which prevents

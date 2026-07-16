@@ -17,8 +17,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.littlenavmap.mobile.R
+import org.littlenavmap.mobile.data.NavigationDataRepository
 import org.littlenavmap.mobile.data.PreferencesRepository
 import org.littlenavmap.mobile.model.FlightPlan
+import org.littlenavmap.mobile.model.NavigationDataPackage
 import org.littlenavmap.mobile.model.ServerProfile
 import org.littlenavmap.mobile.network.ServerProbe
 
@@ -41,6 +43,7 @@ internal data class LittleNavmapUiState(
 
 class LittleNavmapViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = PreferencesRepository(application)
+    private val navigationDataRepository = NavigationDataRepository(application)
     private val serverProbe = ServerProbe()
     private var probeJob: Job? = null
 
@@ -50,6 +53,9 @@ class LittleNavmapViewModel(application: Application) : AndroidViewModel(applica
         private set
 
     internal var flightPlan by mutableStateOf(preferences.loadFlightPlan())
+        private set
+
+    internal var navigationData by mutableStateOf(navigationDataRepository.load())
         private set
 
     init {
@@ -124,8 +130,16 @@ class LittleNavmapViewModel(application: Application) : AndroidViewModel(applica
     }
 
     internal fun updateFlightPlan(plan: FlightPlan) {
-        flightPlan = plan
-        preferences.saveFlightPlan(plan)
+        flightPlan = navigationData?.resolve(plan) ?: plan
+        preferences.saveFlightPlan(flightPlan)
+    }
+
+    internal fun importNavigationData(content: String): Result<NavigationDataPackage> = runCatching {
+        val data = navigationDataRepository.replace(content)
+        navigationData = data
+        flightPlan = data.resolve(flightPlan)
+        preferences.saveFlightPlan(flightPlan)
+        data
     }
 
     private fun probe(profile: ServerProfile) {

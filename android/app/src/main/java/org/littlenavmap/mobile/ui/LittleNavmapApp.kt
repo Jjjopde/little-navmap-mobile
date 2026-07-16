@@ -41,6 +41,8 @@ fun LittleNavmapApp(
         AppSurface.Planner -> FlightPlanningScreen(
             plan = viewModel.flightPlan,
             onPlanChange = viewModel::updateFlightPlan,
+            navigationData = viewModel.navigationData,
+            onImportNavigationData = viewModel::importNavigationData,
             isConnected = state.phase == ConnectionPhase.Connected,
             onConnect = { surface = AppSurface.Connection },
             onOpenLiveMap = { surface = AppSurface.LiveMap },

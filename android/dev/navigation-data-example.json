@@ -1,0 +1,29 @@
+{
+  "cycle": "2607",
+  "airports": [
+    {
+      "identifier": "ZBAA",
+      "latitude": 40.0801,
+      "longitude": 116.5846,
+      "elevationFeet": 116,
+      "sids": ["DAXING 1A", "GITUM 2B"]
+    },
+    {
+      "identifier": "ZSPD",
+      "latitude": 31.1434,
+      "longitude": 121.8052,
+      "elevationFeet": 13,
+      "stars": ["LADIX 1A", "SASAN 2B"],
+      "approaches": ["ILS Z RWY 35L", "RNAV Z RWY 35R"]
+    }
+  ],
+  "fixes": [
+    {
+      "identifier": "GITUM",
+      "latitude": 39.0,
+      "longitude": 117.0,
+      "altitudeFeet": 34000,
+      "xPlaneType": 11
+    }
+  ]
+}

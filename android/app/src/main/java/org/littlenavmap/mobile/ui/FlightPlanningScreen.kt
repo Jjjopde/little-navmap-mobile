@@ -54,6 +54,8 @@ import kotlinx.coroutines.launch
 import org.littlenavmap.mobile.R
 import org.littlenavmap.mobile.model.FlightPlan
 import org.littlenavmap.mobile.model.FlightPlanCodec
+import org.littlenavmap.mobile.model.NavigationDataPackage
+import org.littlenavmap.mobile.model.ProcedureType
 import org.littlenavmap.mobile.network.AviationWeatherClient
 
 private enum class PlannerDestination(val title: String, val icon: Int) {
@@ -79,6 +81,8 @@ private enum class ExportFormat(val fileName: String) {
 internal fun FlightPlanningScreen(
     plan: FlightPlan,
     onPlanChange: (FlightPlan) -> Unit,
+    navigationData: NavigationDataPackage?,
+    onImportNavigationData: (String) -> Result<NavigationDataPackage>,
     isConnected: Boolean,
     onConnect: () -> Unit,
     onOpenLiveMap: () -> Unit,
@@ -110,6 +114,23 @@ internal fun FlightPlanningScreen(
         }.onFailure { error ->
             fileMessage = "Import failed: ${error.message ?: "unsupported file"}"
         }
+    }
+    val importNavigationData = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                ?: error("The selected file could not be read.")
+        }.fold(
+            onSuccess = { content ->
+                onImportNavigationData(content).fold(
+                    onSuccess = { data ->
+                        navDataMessage = "Installed AIRAC ${data.cycle}: ${data.airports.size} airports, ${data.fixes.size} fixes."
+                    },
+                    onFailure = { error -> navDataMessage = "Navigation-data install failed: ${error.message ?: "invalid package"}" },
+                )
+            },
+            onFailure = { error -> navDataMessage = "Navigation-data import failed: ${error.message ?: "unreadable file"}" },
+        )
     }
     val exportPlan = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -212,15 +233,18 @@ internal fun FlightPlanningScreen(
             )
             PlannerDestination.Data -> NavigationDataPanel(
                 plan = plan,
+                navigationData = navigationData,
                 message = navDataMessage,
                 isConnected = isConnected,
                 onConnect = onConnect,
+                onImport = { importNavigationData.launch(arrayOf("application/json", "text/plain")) },
                 modifier = Modifier.padding(padding),
             )
         }
     }
 
     procedurePicker?.let { field ->
+        val suggestedProcedures = navigationData.procedureOptions(plan, field)
         var procedureDraft by remember(field, plan) {
             mutableStateOf(
                 when (field) {
@@ -246,6 +270,24 @@ internal fun FlightPlanningScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (suggestedProcedures.isNotEmpty()) {
+                Text(
+                    text = "Available in AIRAC ${navigationData?.cycle}",
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                suggestedProcedures.forEach { procedure ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clickable { procedureDraft = procedure }
+                            .padding(horizontal = 24.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) { Text(procedure, style = MaterialTheme.typography.bodyLarge) }
+                }
+            }
             OutlinedTextField(
                 value = procedureDraft,
                 onValueChange = { procedureDraft = it.uppercase() },
@@ -421,9 +463,11 @@ private fun WeatherPanel(
 @Composable
 private fun NavigationDataPanel(
     plan: FlightPlan,
+    navigationData: NavigationDataPackage?,
     message: String,
     isConnected: Boolean,
     onConnect: () -> Unit,
+    onImport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -432,10 +476,12 @@ private fun NavigationDataPanel(
     ) {
         Text("Navigation data", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         Text(
-            plan.airacCycle.takeIf(String::isNotBlank)?.let { "AIRAC $it" } ?: "AIRAC cycle unavailable",
+            navigationData?.cycle?.let { "AIRAC $it" }
+                ?: plan.airacCycle.takeIf(String::isNotBlank)?.let { "AIRAC $it" }
+                ?: "AIRAC cycle unavailable",
             style = MaterialTheme.typography.titleLarge,
         )
-        Text("Procedures and coordinates are resolved by the Little Navmap desktop data library. Keep that library current before flying.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Install a Navmap Mobile navigation-data package to resolve airports, fixes, and procedures locally. Keep the desktop Little Navmap library current for connected planning.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth()) {
             Text(message, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -447,6 +493,11 @@ private fun NavigationDataPanel(
             },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        OutlinedButton(
+            onClick = onImport,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            shape = RoundedCornerShape(6.dp),
+        ) { Text("Install navigation data") }
         if (!isConnected) {
             Button(onClick = onConnect, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(6.dp)) {
                 Text("Connect Little Navmap")
@@ -461,4 +512,16 @@ private fun updateProcedure(plan: FlightPlan, field: ProcedureField, value: Stri
     ProcedureField.Sid -> plan.copy(departureProcedure = value)
     ProcedureField.Star -> plan.copy(arrivalProcedure = value)
     ProcedureField.Approach -> plan.copy(approach = value)
+}
+
+private fun NavigationDataPackage?.procedureOptions(
+    plan: FlightPlan,
+    field: ProcedureField,
+): List<String> {
+    val (airport, procedureType) = when (field) {
+        ProcedureField.Sid -> plan.origin to ProcedureType.Sid
+        ProcedureField.Star -> plan.destination to ProcedureType.Star
+        ProcedureField.Approach -> plan.destination to ProcedureType.Approach
+    }
+    return this?.procedures(airport, procedureType).orEmpty()
 }

@@ -45,7 +45,11 @@ departure, destination, alternate, cruise level, SID, STAR, approach, and an
 editable enroute sequence directly on the phone. The native vector route map is
 drawn with Compose Canvas rather than a WebView or online tile provider, and
 shows resolved route points, airspace grid and zoom controls without network map
-latency.
+latency. The Map workspace can switch between the mobile vector route and the
+Little Navmap desktop map. The mobile view resolves typed departure, destination
+and navaid identifiers from an installed mobile package or, when connected, the
+Little Navmap `/api/airport/info` and `/api/map/features` APIs. The Little
+Navmap view displays the route currently loaded by the desktop application.
 Plans can be imported from Little Navmap `.lnmpln`, X-Plane 11/12 `.fms`
 (v1100), the documented Little Navmap Mobile JSON format, or readable ICAO
 route text. They can be exported as Little Navmap Mobile JSON, readable ICAO

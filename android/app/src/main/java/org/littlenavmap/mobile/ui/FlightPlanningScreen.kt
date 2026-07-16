@@ -57,6 +57,7 @@ import org.littlenavmap.mobile.model.FlightPlan
 import org.littlenavmap.mobile.model.FlightPlanCodec
 import org.littlenavmap.mobile.model.NavigationDataPackage
 import org.littlenavmap.mobile.model.ProcedureType
+import org.littlenavmap.mobile.model.ServerProfile
 import org.littlenavmap.mobile.model.moveWaypoint
 import org.littlenavmap.mobile.model.removeWaypointAt
 import org.littlenavmap.mobile.network.AviationWeatherClient
@@ -103,6 +104,9 @@ internal fun FlightPlanningScreen(
     onNavigraphTokenChange: (String) -> Unit,
     onNavigraphImport: () -> Unit,
     isConnected: Boolean,
+    littleNavmapProfile: ServerProfile?,
+    routeResolutionState: RouteResolutionUiState,
+    onResolveRouteWithLittleNavmap: () -> Unit,
     onConnect: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -244,6 +248,9 @@ internal fun FlightPlanningScreen(
             )
             PlannerDestination.Map -> FlightPlanMapScreen(
                 plan = plan,
+                littleNavmapProfile = littleNavmapProfile,
+                routeResolutionState = routeResolutionState,
+                onResolveWithLittleNavmap = onResolveRouteWithLittleNavmap,
                 modifier = Modifier.padding(padding),
             )
             PlannerDestination.Weather -> WeatherPanel(

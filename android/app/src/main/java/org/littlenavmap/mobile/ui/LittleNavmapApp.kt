@@ -56,6 +56,9 @@ fun LittleNavmapApp(
             onNavigraphTokenChange = viewModel::updateNavigraphAccessToken,
             onNavigraphImport = viewModel::importNavigraph,
             isConnected = state.phase == ConnectionPhase.Connected,
+            littleNavmapProfile = state.profile,
+            routeResolutionState = viewModel.routeResolutionUiState,
+            onResolveRouteWithLittleNavmap = viewModel::resolveRouteWithLittleNavmap,
             onConnect = { surface = AppSurface.Connection },
         )
         AppSurface.Connection -> ConnectionScreen(

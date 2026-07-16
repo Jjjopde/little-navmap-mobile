@@ -26,6 +26,7 @@ import org.littlenavmap.mobile.model.XPlaneEndpoint
 import org.littlenavmap.mobile.model.XPlaneSnapshot
 import org.littlenavmap.mobile.network.ServerProbe
 import org.littlenavmap.mobile.network.NavigraphFlightPlanClient
+import org.littlenavmap.mobile.network.LittleNavmapRouteResolver
 import org.littlenavmap.mobile.network.SimBriefFlightPlanClient
 import org.littlenavmap.mobile.network.XPlaneRrefClient
 
@@ -76,6 +77,11 @@ internal data class NavigraphUiState(
     val message: String? = null,
 )
 
+internal data class RouteResolutionUiState(
+    val isResolving: Boolean = false,
+    val message: String? = null,
+)
+
 class LittleNavmapViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = PreferencesRepository(application)
     private val navigationDataRepository = NavigationDataRepository(application)
@@ -83,9 +89,11 @@ class LittleNavmapViewModel(application: Application) : AndroidViewModel(applica
     private val xPlaneClient = XPlaneRrefClient()
     private val simBriefClient = SimBriefFlightPlanClient()
     private val navigraphClient = NavigraphFlightPlanClient()
+    private val routeResolver = LittleNavmapRouteResolver()
     private var probeJob: Job? = null
     private var xPlaneJob: Job? = null
     private var cloudImportJob: Job? = null
+    private var routeResolutionJob: Job? = null
 
     internal var uiState by mutableStateOf(
         LittleNavmapUiState(keepScreenOn = preferences.keepScreenOn()),
@@ -112,6 +120,9 @@ class LittleNavmapViewModel(application: Application) : AndroidViewModel(applica
         private set
 
     internal var navigraphUiState by mutableStateOf(NavigraphUiState())
+        private set
+
+    internal var routeResolutionUiState by mutableStateOf(RouteResolutionUiState())
         private set
 
     init {
@@ -188,6 +199,35 @@ class LittleNavmapViewModel(application: Application) : AndroidViewModel(applica
     internal fun updateFlightPlan(plan: FlightPlan) {
         flightPlan = navigationData?.resolve(plan) ?: plan
         preferences.saveFlightPlan(flightPlan)
+        routeResolutionUiState = routeResolutionUiState.copy(message = null)
+    }
+
+    internal fun resolveRouteWithLittleNavmap() {
+        val profile = uiState.profile
+        if (profile == null) {
+            routeResolutionUiState = RouteResolutionUiState(
+                message = "Connect Little Navmap before resolving route points.",
+            )
+            return
+        }
+        routeResolutionJob?.cancel()
+        routeResolutionUiState = RouteResolutionUiState(isResolving = true)
+        routeResolutionJob = viewModelScope.launch {
+            runCatching { routeResolver.resolve(profile, flightPlan) }
+                .onSuccess { resolved ->
+                    flightPlan = navigationData?.resolve(resolved) ?: resolved
+                    preferences.saveFlightPlan(flightPlan)
+                    routeResolutionUiState = RouteResolutionUiState(
+                        message = "Resolved ${flightPlan.navigationPoints.size} of ${flightPlan.waypoints.size + 2} route points.",
+                    )
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    routeResolutionUiState = RouteResolutionUiState(
+                        message = error.message ?: "Little Navmap could not resolve the route.",
+                    )
+                }
+        }
     }
 
     internal fun setAppLanguage(language: AppLanguage) {

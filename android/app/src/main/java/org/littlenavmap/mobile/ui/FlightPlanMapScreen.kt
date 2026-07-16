@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.littlenavmap.mobile.model.FlightPlan
 import org.littlenavmap.mobile.model.NavigationPoint
+import org.littlenavmap.mobile.model.ServerProfile
 import kotlin.math.max
 import kotlin.math.min
 
@@ -44,11 +47,12 @@ import kotlin.math.min
 @Composable
 internal fun FlightPlanMapScreen(
     plan: FlightPlan,
+    littleNavmapProfile: ServerProfile?,
+    routeResolutionState: RouteResolutionUiState,
+    onResolveWithLittleNavmap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var zoom by remember { mutableFloatStateOf(1f) }
-    var enabledLayers by remember { mutableStateOf(setOf("ROUTE", "AIRSPACE")) }
-    val points = remember(plan.navigationPoints) { plan.navigationPoints.distinctBy { it.identifier to it.latitude to it.longitude } }
+    var source by rememberSaveable { mutableStateOf(MapSource.Mobile) }
     Column(
         modifier = modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -57,12 +61,95 @@ internal fun FlightPlanMapScreen(
             Column(modifier = Modifier.weight(1f)) {
                 Text(localized("Route map", "航路地图"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 Text(
-                    localized("Local vector display", "本地矢量显示"),
+                    localized("Select a map source", "选择地图来源"),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text("${plan.origin.ifBlank { "----" }}  -  ${plan.destination.ifBlank { "----" }}", style = MaterialTheme.typography.labelLarge)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MapSourceChip(
+                label = "MOBILE",
+                selected = source == MapSource.Mobile,
+                onClick = { source = MapSource.Mobile },
+            )
+            MapSourceChip(
+                label = "LITTLE NAVMAP",
+                selected = source == MapSource.LittleNavmap,
+                enabled = littleNavmapProfile != null,
+                onClick = { source = MapSource.LittleNavmap },
+            )
+        }
+        when (source) {
+            MapSource.Mobile -> NativeRouteMap(
+                plan = plan,
+                routeResolutionState = routeResolutionState,
+                canResolveWithLittleNavmap = littleNavmapProfile != null,
+                onResolveWithLittleNavmap = onResolveWithLittleNavmap,
+                modifier = Modifier.weight(1f),
+            )
+            MapSource.LittleNavmap -> {
+                val profile = littleNavmapProfile
+                if (profile != null) {
+                    LittleNavmapRouteMap(profile = profile, modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+private enum class MapSource {
+    Mobile,
+    LittleNavmap,
+}
+
+@Composable
+private fun MapSourceChip(label: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    FilterChip(selected = selected, onClick = onClick, label = { Text(label) }, enabled = enabled)
+}
+
+@Composable
+private fun NativeRouteMap(
+    plan: FlightPlan,
+    routeResolutionState: RouteResolutionUiState,
+    canResolveWithLittleNavmap: Boolean,
+    onResolveWithLittleNavmap: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var enabledLayers by remember { mutableStateOf(setOf("ROUTE", "AIRSPACE")) }
+    val points = remember(plan.navigationPoints) { plan.navigationPoints.distinctBy { it.identifier to it.latitude to it.longitude } }
+    val plannedPointCount = listOf(plan.origin, plan.destination).count(String::isNotBlank) + plan.waypoints.size
+    Column(
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            localized(
+                "Mobile route: ${points.size}/$plannedPointCount points resolved",
+                "手机航路：已解析 ${points.size}/$plannedPointCount 个航路点",
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (points.size < plannedPointCount) {
+            Button(
+                onClick = onResolveWithLittleNavmap,
+                enabled = canResolveWithLittleNavmap && !routeResolutionState.isResolving,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                shape = RoundedCornerShape(6.dp),
+            ) {
+                Text(
+                    localized(
+                        if (routeResolutionState.isResolving) "Resolving with Little Navmap" else "Resolve with Little Navmap",
+                        if (routeResolutionState.isResolving) "正在使用 Little Navmap 解析" else "使用 Little Navmap 解析",
+                    ),
+                )
+            }
+        }
+        routeResolutionState.message?.let { message ->
+            Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MapLayerChip("ROUTE", "ROUTE" in enabledLayers) { enabledLayers = enabledLayers.toggle("ROUTE") }
@@ -96,6 +183,43 @@ internal fun FlightPlanMapScreen(
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun LittleNavmapRouteMap(profile: ServerProfile, modifier: Modifier = Modifier) {
+    var isLoading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    Box(modifier = modifier.fillMaxSize()) {
+        LittleNavmapWebView(
+            profile = profile,
+            destination = PageDestination.Map,
+            isVisible = true,
+            onWebViewReady = {},
+            onLoadingChanged = { isLoading = it },
+            onMainFrameLoaded = { error = null },
+            onMainFrameError = { error = it },
+            modifier = Modifier.fillMaxSize(),
+        )
+        Text(
+            text = localized(
+                "Little Navmap map shows the route currently loaded on the desktop.",
+                "Little Navmap 地图显示当前已在桌面版中加载的航路。",
+            ),
+            modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.labelSmall,
+        )
+        if (isLoading) {
+            Text(
+                localized("Loading Little Navmap map", "正在加载 Little Navmap 地图"),
+                modifier = Modifier.align(Alignment.Center),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        error?.let { message ->
+            Text(message, modifier = Modifier.align(Alignment.Center).padding(24.dp), color = MaterialTheme.colorScheme.error)
         }
     }
 }

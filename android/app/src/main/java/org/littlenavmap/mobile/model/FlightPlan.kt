@@ -41,6 +41,20 @@ data class FlightPlan(
     val airacCycle: String = "",
 )
 
+internal fun FlightPlan.removeWaypointAt(index: Int): FlightPlan {
+    require(index in waypoints.indices)
+    return copy(waypoints = waypoints.filterIndexed { waypointIndex, _ -> waypointIndex != index })
+}
+
+internal fun FlightPlan.moveWaypoint(fromIndex: Int, toIndex: Int): FlightPlan {
+    require(fromIndex in waypoints.indices)
+    require(toIndex in waypoints.indices)
+    val reordered = waypoints.toMutableList().apply {
+        add(toIndex, removeAt(fromIndex))
+    }
+    return copy(waypoints = reordered)
+}
+
 object FlightPlanCodec {
     private val json = Json {
         ignoreUnknownKeys = true

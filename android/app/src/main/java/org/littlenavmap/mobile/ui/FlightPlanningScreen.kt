@@ -57,6 +57,8 @@ import org.littlenavmap.mobile.model.FlightPlan
 import org.littlenavmap.mobile.model.FlightPlanCodec
 import org.littlenavmap.mobile.model.NavigationDataPackage
 import org.littlenavmap.mobile.model.ProcedureType
+import org.littlenavmap.mobile.model.moveWaypoint
+import org.littlenavmap.mobile.model.removeWaypointAt
 import org.littlenavmap.mobile.network.AviationWeatherClient
 
 private enum class PlannerDestination(val title: String, val icon: Int) {
@@ -203,7 +205,12 @@ internal fun FlightPlanningScreen(
                         waypointInput = ""
                     }
                 },
-                onRemoveWaypoint = { waypoint -> onPlanChange(plan.copy(waypoints = plan.waypoints - waypoint)) },
+                onRemoveWaypoint = { index ->
+                    onPlanChange(plan.removeWaypointAt(index))
+                },
+                onMoveWaypoint = { fromIndex, toIndex ->
+                    onPlanChange(plan.moveWaypoint(fromIndex, toIndex))
+                },
                 onProcedureClick = { procedurePicker = it },
                 onImport = { importPlan.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
                 onExport = { format ->
@@ -331,7 +338,8 @@ private fun FlightPlanEditor(
     onPlanChange: (FlightPlan) -> Unit,
     onWaypointInputChange: (String) -> Unit,
     onAddWaypoint: () -> Unit,
-    onRemoveWaypoint: (String) -> Unit,
+    onRemoveWaypoint: (Int) -> Unit,
+    onMoveWaypoint: (Int, Int) -> Unit,
     onProcedureClick: (ProcedureField) -> Unit,
     onImport: () -> Unit,
     onExport: (ExportFormat) -> Unit,
@@ -376,7 +384,24 @@ private fun FlightPlanEditor(
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("${index + 1}", modifier = Modifier.width(28.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(waypoint, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                    IconButton(onClick = { onRemoveWaypoint(waypoint) }) {
+                    IconButton(onClick = { onMoveWaypoint(index, index - 1) }, enabled = index > 0) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_arrow_back),
+                            contentDescription = "Move $waypoint up",
+                            modifier = Modifier.graphicsLayer(rotationZ = 90f),
+                        )
+                    }
+                    IconButton(
+                        onClick = { onMoveWaypoint(index, index + 1) },
+                        enabled = index < plan.waypoints.lastIndex,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_arrow_back),
+                            contentDescription = "Move $waypoint down",
+                            modifier = Modifier.graphicsLayer(rotationZ = -90f),
+                        )
+                    }
+                    IconButton(onClick = { onRemoveWaypoint(index) }) {
                         Icon(painterResource(R.drawable.ic_unlink), "Remove $waypoint")
                     }
                 }

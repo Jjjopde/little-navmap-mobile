@@ -84,4 +84,18 @@ class FlightPlanCodecTest {
         assertEquals(3, imported.navigationPoints.size)
         assertEquals(-3.093, imported.navigationPoints.last().longitude, 0.0001)
     }
+
+    @Test
+    fun movesAndRemovesExactWaypointOccurrence() {
+        val plan = FlightPlan(waypoints = listOf("GITUM", "A593", "GITUM"))
+
+        assertEquals(
+            listOf("GITUM", "GITUM", "A593"),
+            plan.moveWaypoint(fromIndex = 2, toIndex = 1).waypoints,
+        )
+        assertEquals(
+            listOf("GITUM", "GITUM"),
+            plan.removeWaypointAt(index = 1).waypoints,
+        )
+    }
 }

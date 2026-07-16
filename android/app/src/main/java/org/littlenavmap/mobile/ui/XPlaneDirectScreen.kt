@@ -21,6 +21,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -28,6 +29,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import org.littlenavmap.mobile.model.XPlaneSnapshot
 
 @Composable
@@ -40,6 +43,14 @@ internal fun XPlaneDirectScreen(
     modifier: Modifier = Modifier,
 ) {
     val isConnecting = state.phase == XPlanePhase.Connecting
+    if (state.phase == XPlanePhase.Connected && state.endpoint != null) {
+        LaunchedEffect(state.endpoint) {
+            while (isActive) {
+                delay(REFRESH_INTERVAL_MILLIS)
+                onRefresh()
+            }
+        }
+    }
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -134,3 +145,4 @@ private fun Float.format(decimals: Int): String = "%.${decimals}f".format(Locale
 private fun Double.format(decimals: Int): String = "%.${decimals}f".format(Locale.US, this)
 
 private const val METERS_PER_SECOND_TO_KNOTS = 1.943844f
+private const val REFRESH_INTERVAL_MILLIS = 1_000L

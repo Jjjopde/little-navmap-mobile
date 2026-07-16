@@ -24,24 +24,31 @@ internal class XPlaneRrefClient(
         val address = InetAddress.getByName(host)
         DatagramSocket().use { socket ->
             socket.soTimeout = timeoutMillis
-            DATA_REFS.forEach { reference ->
-                val request = XPlaneRrefProtocol.request(reference)
-                socket.send(DatagramPacket(request, request.size, address, port))
-            }
-
-            val values = mutableMapOf<Int, Float>()
-            val deadline = System.nanoTime() + timeoutMillis * NANOS_PER_MILLISECOND
-            val packet = DatagramPacket(ByteArray(MAX_RESPONSE_BYTES), MAX_RESPONSE_BYTES)
-            while (System.nanoTime() < deadline && values.keys.containsAll(REQUIRED_DATA_REF_IDS).not()) {
-                try {
-                    socket.receive(packet)
-                } catch (_: java.net.SocketTimeoutException) {
-                    break
+            try {
+                DATA_REFS.forEach { reference ->
+                    val request = XPlaneRrefProtocol.request(reference, ACTIVE_REQUEST_FREQUENCY_HZ)
+                    socket.send(DatagramPacket(request, request.size, address, port))
                 }
-                values.putAll(XPlaneRrefProtocol.response(packet.data, packet.length))
+
+                val values = mutableMapOf<Int, Float>()
+                val deadline = System.nanoTime() + timeoutMillis * NANOS_PER_MILLISECOND
+                val packet = DatagramPacket(ByteArray(MAX_RESPONSE_BYTES), MAX_RESPONSE_BYTES)
+                while (System.nanoTime() < deadline && !values.keys.containsAll(REQUIRED_DATA_REF_IDS)) {
+                    try {
+                        socket.receive(packet)
+                    } catch (_: java.net.SocketTimeoutException) {
+                        break
+                    }
+                    values.putAll(XPlaneRrefProtocol.response(packet.data, packet.length))
+                }
+                XPlaneRrefProtocol.snapshot(values)
+                    ?: throw IllegalStateException("X-Plane did not return position data. Enable UDP dataref access and check the address.")
+            } finally {
+                DATA_REFS.forEach { reference ->
+                    val request = XPlaneRrefProtocol.request(reference, frequencyHz = 0)
+                    runCatching { socket.send(DatagramPacket(request, request.size, address, port)) }
+                }
             }
-            XPlaneRrefProtocol.snapshot(values)
-                ?: throw IllegalStateException("X-Plane did not return position data. Enable UDP dataref access and check the address.")
         }
     }
 
@@ -51,6 +58,7 @@ internal class XPlaneRrefClient(
         const val MIN_PORT = 1
         const val MAX_PORT = 65_535
         const val NANOS_PER_MILLISECOND = 1_000_000L
+        const val ACTIVE_REQUEST_FREQUENCY_HZ = 1
         val REQUIRED_DATA_REF_IDS = setOf(XPlaneDataRef.Latitude.id, XPlaneDataRef.Longitude.id)
         val DATA_REFS = XPlaneDataRef.entries.toList()
     }
@@ -72,14 +80,17 @@ internal object XPlaneRrefProtocol {
     private val requestHeader = "RREF\u0000".toByteArray(StandardCharsets.US_ASCII)
     private val responseHeader = "RREF,".toByteArray(StandardCharsets.US_ASCII)
 
-    fun request(reference: XPlaneDataRef): ByteArray = ByteBuffer
+    fun request(reference: XPlaneDataRef, frequencyHz: Int = REQUEST_FREQUENCY_HZ): ByteArray {
+        require(frequencyHz >= 0)
+        return ByteBuffer
         .allocate(REQUEST_BYTES)
         .order(ByteOrder.LITTLE_ENDIAN)
         .put(requestHeader)
-        .putInt(REQUEST_FREQUENCY_HZ)
+        .putInt(frequencyHz)
         .putInt(reference.id)
         .put(reference.path.toByteArray(StandardCharsets.US_ASCII).copyOf(DATAREF_NAME_BYTES))
         .array()
+    }
 
     fun response(bytes: ByteArray, length: Int): Map<Int, Float> {
         if (length < RESPONSE_HEADER_BYTES || !bytes.copyOfRange(0, RESPONSE_HEADER_BYTES).contentEquals(responseHeader)) {

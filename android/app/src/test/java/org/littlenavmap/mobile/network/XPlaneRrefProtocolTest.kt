@@ -18,6 +18,16 @@ class XPlaneRrefProtocolTest {
     }
 
     @Test
+    fun encodesZeroFrequencyToCancelSubscription() {
+        val request = XPlaneRrefProtocol.request(XPlaneDataRef.WindSpeed, frequencyHz = 0)
+        val buffer = ByteBuffer.wrap(request).order(ByteOrder.LITTLE_ENDIAN)
+
+        buffer.position(5)
+        assertEquals(0, buffer.int)
+        assertEquals(XPlaneDataRef.WindSpeed.id, buffer.int)
+    }
+
+    @Test
     fun decodesRrefResponseIntoSnapshot() {
         val response = ByteBuffer.allocate(5 + 8 * 3).order(ByteOrder.LITTLE_ENDIAN)
         response.put("RREF,".toByteArray())
